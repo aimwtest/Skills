@@ -7,6 +7,7 @@ A collection of reusable AI agent skills. Each subfolder is a self-contained ski
 | Skill | Description |
 |---|---|
 | [`fortisoar-playbook`](./fortisoar-playbook) | Design and generate FortiSOAR playbook (workflow) JSON. Bundles a JSON-schema reference, a connector-operations catalog (379 connectors / 3339 ops harvested from the official `fortinet-fortisoar` GitHub org), a Jinja cookbook, step-type quickref, and ready-to-paste templates. Works in opencode, Claude Code, Claude.ai Projects, Grok, Cursor, Continue, and any LLM. |
+| [`fortisoar-connector`](./fortisoar-connector) | Develop, scaffold, extend, and troubleshoot FortiSOAR connectors (Python integrations built from `info.json` + `connector.py` + `operations.py`, packaged as `.tgz`). Bundles an `info.json` schema reference, `connector.py`/`operations.py` patterns with auth snippets, a packaging/testing guide, a `connectors.log` troubleshooting guide (static vs. dynamic errors), and a working connector skeleton to copy and fill in. Built from Fortinet's official connector-development guide and real repos in the `fortinet-fortisoar` GitHub org. |
 
 ## Skill format
 
