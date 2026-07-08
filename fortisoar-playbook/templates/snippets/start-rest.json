@@ -1,0 +1,26 @@
+{
+  "@type": "WorkflowStep",
+  "name": "Start",
+  "description": null,
+  "arguments": {
+    "route": "TODO-FIRST-ROUTE-UUID",
+    "__triggerLimit": true,
+    "step_variables": {
+      "input": {
+        "params": {
+          "api_body": "{{vars.request.data}}",
+          "api_params": "{{vars.request.params}}"
+        }
+      }
+    },
+    "triggerOnSource": true,
+    "triggerOnReplicate": false,
+    "authentication_methods": [""]
+  },
+  "status": null,
+  "top": "40",
+  "left": "40",
+  "stepType": "/api/3/workflow_step_types/df26c7a2-4166-4ca5-91e5-548e24c01b5f",
+  "group": null,
+  "uuid": "TODO-START-UUID"
+}

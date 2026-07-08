@@ -1,0 +1,39 @@
+{
+  "@type": "WorkflowStep",
+  "name": "Create Threat Intel Feed",
+  "description": null,
+  "arguments": {
+    "for_each": {
+      "item": "{{vars.input.params['report_iocs']}}",
+      "__bulk": true,
+      "parallel": false,
+      "condition": "",
+      "batch_size": 100
+    },
+    "resource": {
+      "value": "{{vars.item.name}}",
+      "source": "Manual",
+      "__replace": "true",
+      "expiresOn": "{{ arrow.now().int_timestamp + (vars.input.params['expiry'] | int) * 24 * 60 * 60 }}",
+      "confidence": "{{vars.input.params.confidence}}",
+      "reputation": "{{vars.input.params.reputation | resolveRange(vars.reputation_map)}}",
+      "sourceData": "{{vars.item}}",
+      "typeOfFeed": "{{vars.item.type | resolveRange(vars.threat_intel_feed_type_map)}}"
+    },
+    "operation": "Append",
+    "collection": "/api/3/upsert/threat_intel_feeds",
+    "__recommend": [],
+    "fieldOperation": {
+      "recordTags": "Append",
+      "threatTypes": "Overwrite",
+      "killChainPhases": "Overwrite"
+    },
+    "step_variables": []
+  },
+  "status": null,
+  "top": "240",
+  "left": "440",
+  "stepType": "/api/3/workflow_step_types/2597053c-e718-44b4-8394-4d40fe26d357",
+  "group": null,
+  "uuid": "TODO-STEP-UUID"
+}

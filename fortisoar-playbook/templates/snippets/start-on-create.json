@@ -1,0 +1,32 @@
+{
+  "@type": "WorkflowStep",
+  "name": "Start",
+  "description": null,
+  "arguments": {
+    "resource": "alerts",
+    "resources": ["alerts"],
+    "__triggerLimit": true,
+    "step_variables": {
+      "input": {
+        "params": [],
+        "records": [
+          "{{vars.input.records[0]}}"
+        ]
+      }
+    },
+    "triggerOnSource": true,
+    "fieldbasedtrigger": {
+      "sort": [],
+      "limit": 30,
+      "logic": "AND",
+      "filters": []
+    },
+    "triggerOnReplicate": false
+  },
+  "status": null,
+  "top": "40",
+  "left": "40",
+  "stepType": "/api/3/workflow_step_types/ea155646-3821-4542-9702-b246da430a8d",
+  "group": null,
+  "uuid": "TODO-START-UUID"
+}

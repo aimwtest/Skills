@@ -1,0 +1,29 @@
+{
+  "@type": "WorkflowStep",
+  "name": "Add Comment to the Alert",
+  "description": null,
+  "arguments": {
+    "resource": {
+      "type": "/api/3/picklists/ff599189-3eeb-4c86-acb0-a7915e85ac3b",
+      "alerts": "{{vars.input.records[0]['@id']}}",
+      "people": [],
+      "content": "<p>Playbook processed: {{vars.input.records[0].name}}</p>",
+      "__replace": "",
+      "isImportant": false,
+      "peopleUpdated": false
+    },
+    "operation": "Overwrite",
+    "collection": "/api/3/comments",
+    "__recommend": [],
+    "fieldOperation": {
+      "recordTags": "Overwrite"
+    },
+    "step_variables": []
+  },
+  "status": null,
+  "top": "440",
+  "left": "440",
+  "stepType": "/api/3/workflow_step_types/2597053c-e718-44b4-8394-4d40fe26d357",
+  "group": null,
+  "uuid": "TODO-STEP-UUID"
+}

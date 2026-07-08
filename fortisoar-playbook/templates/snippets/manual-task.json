@@ -1,0 +1,32 @@
+{
+  "@type": "WorkflowStep",
+  "name": "Approver Approval To Implement",
+  "description": null,
+  "arguments": {
+    "message": {
+      "tags": [],
+      "type": "/api/3/picklists/ff599189-3eeb-4c86-acb0-a7915e85ac3b",
+      "tenant": "",
+      "content": "<p>Added task <a href=\"/modules/tasks/{{vars.steps.Approver_Approval_To_Implement.uuid}}\" target=\"_blank\" rel=\"noopener\">{{vars.steps.Approver_Approval_To_Implement.name}}</a> to <strong>'Approver Approval To Implement'</strong></p>",
+      "records": "{{vars.input.records[0]['@id']}}",
+      "parentstepid": "/api/3/workflow_steps/TODO-THIS-STEP-UUID"
+    },
+    "resource": {
+      "name": "Approver Approval To Implement - {{vars.input.records[0].title}}",
+      "dueBy": "{{vars.input.records[0].dueDate}}",
+      "status": "/api/3/picklists/TODO-TASK-STATUS-PICKLIST",
+      "priority": "/api/3/picklists/TODO-TASK-PRIORITY-PICKLIST",
+      "description": "Approval to proceed with the implementation.",
+      "assignedOnDate": "{{arrow.utcnow().int_timestamp}}",
+      "assignedToPerson": "TODO-USER-IRI"
+    },
+    "collection": "tasks",
+    "step_variables": []
+  },
+  "status": null,
+  "top": "440",
+  "left": "840",
+  "stepType": "/api/3/workflow_step_types/dc6ac63d-c5a5-472f-9eb4-6b18473a98b8",
+  "group": null,
+  "uuid": "TODO-STEP-UUID"
+}

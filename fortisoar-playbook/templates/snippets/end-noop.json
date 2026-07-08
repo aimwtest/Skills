@@ -1,0 +1,19 @@
+{
+  "@type": "WorkflowStep",
+  "name": "End",
+  "description": null,
+  "arguments": {
+    "params": [],
+    "version": "3.5.0",
+    "connector": "cyops_utilities",
+    "operation": "no_op",
+    "operationTitle": "Utils: No Operation",
+    "step_variables": []
+  },
+  "status": null,
+  "top": "440",
+  "left": "440",
+  "stepType": "/api/3/workflow_step_types/0109f35d-090b-4a2b-bd8a-94cbc3508562",
+  "group": null,
+  "uuid": "TODO-STEP-UUID"
+}

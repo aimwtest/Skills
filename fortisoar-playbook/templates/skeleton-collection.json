@@ -1,0 +1,50 @@
+{
+  "type": "workflow_collections",
+  "data": [
+    {
+      "@context": "/api/3/contexts/WorkflowCollection",
+      "@type": "WorkflowCollection",
+      "name": "TODO_COLLECTION_NAME",
+      "description": "TODO collection description",
+      "visible": true,
+      "image": null,
+      "uuid": "TODO-COLLECTION-UUID",
+      "deletedAt": null,
+      "importedBy": [],
+      "recordTags": [],
+      "workflows": [
+        {
+          "@type": "Workflow",
+          "triggerLimit": null,
+          "name": "TODO_PLAYBOOK_NAME",
+          "aliasName": null,
+          "tag": null,
+          "description": "TODO playbook description",
+          "isActive": true,
+          "debug": false,
+          "singleRecordExecution": false,
+          "remoteExecutableFlag": false,
+          "parameters": [],
+          "synchronous": false,
+          "collection": "/api/3/workflow_collections/TODO-COLLECTION-UUID",
+          "versions": [],
+          "triggerStep": "/api/3/workflow_steps/TODO-START-UUID",
+          "steps": [
+            "// see templates/snippets/ for step examples"
+          ],
+          "routes": [],
+          "groups": [],
+          "priority": "/api/3/picklists/2b563c61-ae2c-41c0-a85a-c9709585e3f2",
+          "playbookOrigin": "/api/3/picklists/15c1e8c9-22bf-4e66-8fbb-0a502d4a4a3f",
+          "isEditable": true,
+          "uuid": "TODO-WORKFLOW-UUID",
+          "owners": [],
+          "isPrivate": false,
+          "deletedAt": null,
+          "recordTags": []
+        }
+      ]
+    }
+  ],
+  "exported_tags": []
+}

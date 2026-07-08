@@ -1,0 +1,21 @@
+{
+  "@type": "WorkflowStep",
+  "name": "Start",
+  "description": null,
+  "arguments": {
+    "__triggerLimit": true,
+    "step_variables": {
+      "input": {
+        "params": []
+      }
+    },
+    "triggerOnSource": true,
+    "triggerOnReplicate": false
+  },
+  "status": null,
+  "top": "40",
+  "left": "40",
+  "stepType": "/api/3/workflow_step_types/b348f017-9a94-471f-87f8-ce88b6a7ad62",
+  "group": null,
+  "uuid": "TODO-START-UUID"
+}

@@ -1,0 +1,28 @@
+{
+  "@type": "WorkflowStep",
+  "name": "Check Condition",
+  "description": null,
+  "arguments": {
+    "conditions": [
+      {
+        "option": "Yes",
+        "step_iri": "/api/3/workflow_steps/TODO-YES-STEP-UUID",
+        "condition": "{{ vars.severity == 'High' }}",
+        "step_name": "Target Step Yes"
+      },
+      {
+        "option": "No",
+        "default": true,
+        "step_iri": "/api/3/workflow_steps/TODO-NO-STEP-UUID",
+        "step_name": "Target Step No"
+      }
+    ],
+    "step_variables": []
+  },
+  "status": null,
+  "top": "240",
+  "left": "440",
+  "stepType": "/api/3/workflow_step_types/12254cf5-5db7-4b1a-8cb1-3af081924b28",
+  "group": null,
+  "uuid": "TODO-STEP-UUID"
+}

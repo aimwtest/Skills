@@ -1,0 +1,32 @@
+{
+  "@type": "WorkflowStep",
+  "name": "Call FGT Command",
+  "description": null,
+  "arguments": {
+    "name": "Fortinet FortiGate",
+    "config": "TODO-CONNECTOR-CONFIG-UUID",
+    "params": {
+      "port": 22,
+      "timeout": 10,
+      "cmd_list": "{{vars.my_command}}",
+      "password": "TODO-PASSWORD",
+      "username": "admin",
+      "interactive": false,
+      "private_key": ""
+    },
+    "version": "5.4.0",
+    "connector": "fortigate-firewall",
+    "operation": "execute_command",
+    "operationTitle": "Execute Command",
+    "pickFromTenant": false,
+    "step_variables": {
+      "fortigate_output": "{{vars.steps.Call_FGT_Command.data}}"
+    }
+  },
+  "status": null,
+  "top": "240",
+  "left": "440",
+  "stepType": "/api/3/workflow_step_types/0bfed618-0316-11e7-93ae-92361f002671",
+  "group": null,
+  "uuid": "TODO-STEP-UUID"
+}

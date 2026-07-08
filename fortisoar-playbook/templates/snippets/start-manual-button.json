@@ -1,0 +1,40 @@
+{
+  "@type": "WorkflowStep",
+  "name": "Start",
+  "description": null,
+  "arguments": {
+    "route": "TODO-FIRST-ROUTE-UUID",
+    "resources": ["alerts"],
+    "__triggerLimit": true,
+    "inputVariables": [],
+    "step_variables": {
+      "input": {
+        "params": [],
+        "records": "{{vars.input.records}}"
+      }
+    },
+    "triggerOnSource": true,
+    "displayConditions": {
+      "alerts": {
+        "sort": [],
+        "limit": 30,
+        "logic": "AND",
+        "filters": []
+      }
+    },
+    "executeButtonText": "Execute",
+    "noRecordExecution": false,
+    "showToasterMessage": {
+      "visible": false,
+      "messageVisible": true
+    },
+    "triggerOnReplicate": false,
+    "singleRecordExecution": true
+  },
+  "status": null,
+  "top": "40",
+  "left": "40",
+  "stepType": "/api/3/workflow_step_types/f414d039-bb0d-4e59-9c39-a8f1e880b18a",
+  "group": null,
+  "uuid": "TODO-START-UUID"
+}

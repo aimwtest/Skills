@@ -1,0 +1,14 @@
+{
+  "@type": "WorkflowStep",
+  "name": "Set My Variable",
+  "description": null,
+  "arguments": {
+    "my_variable": "{{vars.input.records[0].name}}"
+  },
+  "status": null,
+  "top": "240",
+  "left": "440",
+  "stepType": "/api/3/workflow_step_types/04d0cf46-b6a8-42c4-8683-60a7eaa69e8f",
+  "group": null,
+  "uuid": "TODO-STEP-UUID"
+}

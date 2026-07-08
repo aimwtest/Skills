@@ -1,0 +1,21 @@
+{
+  "@type": "WorkflowStep",
+  "name": "Call Sub Playbook",
+  "description": null,
+  "arguments": {
+    "arguments": {
+      "input_param_1": "{{vars.input.records[0].id}}"
+    },
+    "apply_async": false,
+    "step_variables": [],
+    "pass_parent_env": false,
+    "pass_input_record": false,
+    "workflowReference": "/api/3/workflows/TODO-TARGET-WORKFLOW-UUID"
+  },
+  "status": null,
+  "top": "240",
+  "left": "440",
+  "stepType": "/api/3/workflow_step_types/74932bdc-b8b6-4d24-88c4-1a4dfbc524f3",
+  "group": null,
+  "uuid": "TODO-STEP-UUID"
+}
