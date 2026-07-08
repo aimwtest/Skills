@@ -1,0 +1,5 @@
+# Extra Python dependencies for this connector, one per line.
+# `requests` is already available in the FortiSOAR connector runtime — do NOT list it.
+# Only add packages the connector actually imports, e.g.:
+#   feedparser
+#   pandas==2.2.2
