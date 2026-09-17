@@ -3,18 +3,21 @@ name: fortisoar-playbook
 description: Design, generate, and self-test FortiSOAR playbooks (workflow JSON). Use when the user mentions FortiSOAR, playbook, SOAR workflow, playbook collection, connector operations, playbook JSON import/export, or wants to automate a security process in FortiSOAR. Covers trigger setup, step types, routing, Jinja templating, instance connector discovery, static validation, live import-testing, and producing import-ready JSON.
 ---
 
-# FortiSOAR Playbook Builder — v2.1
+# FortiSOAR Playbook Builder — v2.3
 
 This skill helps design and generate FortiSOAR playbook JSON that can be imported
 into FortiSOAR 7.6.x — and **verifies it against a live instance** before handing
 it over. It is self-contained: all reference material is bundled in `reference/`,
 `templates/`, and `scripts/` relative to this file.
 
-**v2.1:** every API endpoint verified against a live 7.6.1 instance; MCP added as
-a second discovery method. **v2.0:** instance discovery (real connector versions +
-config UUIDs), clarification gate (no generation on vague requirements), agreed
-test plan before generation, automated static validation, guarded live import-test
-loop.
+**v2.3:** connector install API verified end-to-end on a live dev instance
+(metadata source, install endpoint, async polling, permission probe). **v2.2:**
+missing-connector handling (install-then-discover with user approval);
+native-steps-first generation rule (Code Snippet = last resort). **v2.1:** every
+API endpoint verified against a live 7.6.1 instance; MCP added as a second
+discovery method. **v2.0:** instance discovery (real connector versions + config
+UUIDs), clarification gate (no generation on vague requirements), agreed test plan
+before generation, automated static validation, guarded live import-test loop.
 
 ## When to use
 
@@ -108,6 +111,43 @@ run it via the playbooks MCP, and harvest its output. Persist the results to
 `.fortisoar/instance-profile.json` in the same shape the script writes, so the
 rest of the workflow (validation, generation) is method-agnostic.
 
+**Connector missing? Install-then-discover (dev only, with user approval):**
+
+If the needed connector is not in the profile, you may offer to install it — but
+only on a dev instance and only after explicit in-chat user approval. Installing
+pulls OS-level dependencies onto the appliance, so never auto-install, and never
+install on prod without the same explicit confirmation Step 4.5 requires.
+
+Verified API flow (verified end-to-end against a live 7.6.x dev instance):
+
+1. **Fetch install metadata**: `POST /api/3/fetch_repo_content` with
+   `{"path": "connectors/info/<name>_<version>/info.json"}` returns `name`,
+   `label`, `version`, `description`, `category`, `publisher`, and the critical
+   `rpm_name` (`cyops-connector-<name>-<version>`). Browse
+   `{"path": "connectors/info/"}` (autoindex HTML) to list every available
+   connector+version. (Note: the prettier `content-hub/<name>-<ver>/...` repo
+   tree has NO `rpm_name`; and `/api/integration/connectors/<name>/<version>/`
+   only covers connectors the instance already knows — not-installed ones
+   return "No matching connector by name".)
+2. **Install**: `POST /api/integration/install-connector/?format=json` with
+   `{"name", "label", "version", "rpm_name", "category", "description",
+   "publisher"}` (PUT for an update of an already-installed connector).
+   Minimal field: `rpm_name` alone passes validation, but send the full set
+   like the UI does. The call is async — 200 returns immediately
+   (`{"message": "Installing connector <name> version <ver>"}`); poll
+   `GET /api/integration/connectors/?name=<name>` until `status` moves
+   `In-Progress` → `Completed` (observed ~35 s for a small connector).
+3. **Configure**: re-run discovery — the connector now appears with
+   `config_count: 0`. Ask the user for the connector's configuration
+   credentials (API keys, tokens — you cannot invent these), create the
+   configuration (Settings > Connector Configurations), then re-run discovery
+   once more to harvest the real `config` UUID.
+4. Continue to Step 1. If the user declines the install, fall back to
+   proposing an installed alternative or a built-in connector workaround.
+
+The Content Hub UI (Content Hub > search > Install) remains a valid alternative
+if the user prefers to click.
+
 **No API access at all?** Fallback: ask the user to export one existing playbook
 from their instance that uses a configured connector, and harvest real `config`
 UUIDs from it. Say clearly that live validation (Step 4.5) is then unavailable.
@@ -130,8 +170,10 @@ absolutely do not write JSON, while any of these is unknown or assumed:
 3. **Input** — user input form (manual trigger) or parameters (referenced)? What fields, with what example values?
 4. **Logic / steps** — what should it do, in order? Which connectors (check them
    against the instance profile from Step 0 — if a requested connector is not
-   installed, say so and propose alternatives; never guess)? What conditions,
-   what happens on each branch? What loops?
+   installed, say so and offer, in order: (a) install-then-discover on dev with
+   the user's approval (see Step 0), (b) an installed alternative, (c) a built-in
+   connector workaround; never guess)? What conditions, what happens on each
+   branch? What loops?
 5. **Output** — comment on the record? create/update a record? send email? call a sub-playbook? return a value to a parent?
 6. **Edge cases** — what should happen when a connector call fails, returns
    empty, or the record field is missing?
@@ -229,22 +271,32 @@ unless the user asks for a bare single playbook.
      `format_richtext`, `json_to_html`, etc.) are listed in the schema reference §6.
    - For the built-in `cyops_utilities` connector (stepType `0109f35d`) the
      `config`/`name`/`pickFromTenant` keys are omitted.
-9. **End step**: terminate every playbook path in an End step (`cyops_utilities` /
-   `no_op` / operationTitle "Utils: No Operation") — official guidance. FortiSOAR
-   tolerates playbooks without one, so existing exports may lack it; still include
-   it in anything you generate.
-10. **Required Workflow fields** (minimum for valid import): `@type:"Workflow"`,
+9. **Native steps first, Code Snippet last resort**: implement logic using, in
+   order of preference: (1) native step types + Jinja (Set Variable, Condition,
+   loops, record CRUD — patterns in `reference/jinja-cookbook.md`); (2) built-in
+   utility connectors (`cyops_utilities` ops such as `format_richtext`,
+   `json_to_html`, `make_cyops_request`; `http`; etc.); (3) the Code Snippet
+   connector — only when neither (1) nor (2) can express the logic. When a Code
+   Snippet step is used, justify it in one line (step `description` + tell the
+   user) stating why native steps can't do it. Rationale: native steps are
+   visible in the designer, show per-step input/output when debugging, and
+   survive upgrades better; sandboxed Python is opaque and harder to maintain.
+10. **End step**: terminate every playbook path in an End step (`cyops_utilities` /
+    `no_op` / operationTitle "Utils: No Operation") — official guidance. FortiSOAR
+    tolerates playbooks without one, so existing exports may lack it; still include
+    it in anything you generate.
+11. **Required Workflow fields** (minimum for valid import): `@type:"Workflow"`,
     `name`, `isActive`, `debug`, `singleRecordExecution`, `remoteExecutableFlag`,
     `parameters`, `synchronous`, `collection`, `versions:[]`, `triggerStep`,
     `steps`, `routes`, `groups`, `priority`, `isEditable`, `uuid`, `owners:[]`,
     `isPrivate`, `deletedAt:null`, `recordTags:[]`, `aliasName:null`,
     `tag:null`, `description`.
     Use `"priority": "/api/3/picklists/2b563c61-ae2c--41c0-a85a-c9709585e3f2"` (Medium).
-11. **Collection wrapper (Shape A)**: wrap the Workflow in
+12. **Collection wrapper (Shape A)**: wrap the Workflow in
     `{ "type":"workflow_collections", "data":[ { ...collection..., "workflows":[ <workflow> ] } ], "exported_tags":[] }`.
     Give the collection a `uuid`, `name`, `description`, `visible:true`,
     `deletedAt:null`, `recordTags:[]`, `importedBy:[]`.
-12. **Output the file** to `<meaningful-name>.json` in the current directory
+13. **Output the file** to `<meaningful-name>.json` in the current directory
     (or a path the user specifies).
 
 ### Step 4 — Validate (automated)
@@ -349,12 +401,24 @@ Tell the user:
 **Permissions the API key needs** (verified against 7.6.1; assign to a dedicated
 service user):
 
+**Minimum roles (verified end-to-end): `Playbook Administrator` + `SOC Analyst`.**
+Playbook Administrator alone already covers discovery, connector install,
+configuration create, import, trigger, and polling; SOC Analyst adds alert
+Create/Read/Update for synthetic test data (without it, use `existing_record`
+in test plans). Even with both, deletes of workflows, configurations, and test
+records return `403` — plan manual UI cleanup for those (collections CAN be
+deleted and cascade to their workflows).
+
+Per-area detail:
+
 | Area | Access | Used for |
 |---|---|---|
 | Connectors | Read | discovery: `/api/integration/connectors/`, `/api/integration/configuration/` |
+| Connectors | Install | optional, Step 0 install-then-discover: `POST /api/integration/install-connector/` + `POST /api/3/fetch_repo_content` (repo metadata). Verified end-to-end (real install completed) with **Playbook Administrator as the only role** — no admin role required, and that role also covers the discovery Read needs. Permission probe: POST an empty payload; a `400` validation reply means authorized, a `403` means escalate the role's Connectors access |
 | Picklists | Read | discovery + test data picklist IRIs |
-| Playbooks / Workflows | Full CRUD + Execute | import (create), trigger, **cleanup** — note: a key with create-only can import and list, but single-workflow GET/PUT/DELETE return 403, leaving test workflows for manual UI cleanup |
-| Test module(s) (Alerts, …) | Create, Read, Update, Delete | synthetic test records |
+| Playbooks / Workflows | Full CRUD + Execute | import (create), trigger, **cleanup** — verified: **Playbook Administrator alone** can list collections/workflows, import (collection + workflow create), trigger execution and poll `log_list`, and delete collections (which cascades to their workflows); but single-workflow GET/PUT/DELETE return `403`, leaving test workflows for manual UI cleanup (+ recycle-bin purge) |
+| Connector configurations | Create | Step 0 install-then-discover: `POST /api/integration/configuration/` — verified with Playbook Administrator alone (returns the `config_id` to bind in playbook steps); configuration DELETE returns `403` → manual UI cleanup |
+| Test module(s) (Alerts, …) | Create, Read, Update (Delete = `403`) | synthetic test records — verified: Playbook Administrator alone gets `403` on create; **adding SOC Analyst** enables alert Create/Read/Update but **not Delete** (test records need manual cleanup or a higher role). Without any module access, use `existing_record` in the test plan instead of generated records |
 | Schedules | Read, Update | only for testing schedule-triggered playbooks |
 
 ## Modifying existing playbooks
@@ -399,6 +463,30 @@ trigger patterns, real argument shapes, Jinja patterns, routing, groups, macros,
 and field surveys. Consult it when you need a real-world example of a pattern.
 
 ## Changelog
+
+**v2.3** — Connector install verified end-to-end on a live 7.6.x dev instance:
+metadata via `POST /api/3/fetch_repo_content` (`connectors/info/<name>_<ver>/info.json`
+carries `rpm_name`; the `content-hub/` tree does not), install via
+`POST /api/integration/install-connector/` (async; poll
+`GET /api/integration/connectors/?name=<name>` until `status: Completed`,
+observed ~35 s), PUT for updates. Permission probe: POST empty payload →
+`400` = authorized, `403` = not; install rights verified with **Playbook
+Administrator as the only role** (real install completed). Same single role also
+verified for playbook list + import (collection/workflow create, collection
+delete); single-workflow GET/PUT/DELETE return `403`. Same role further
+verified: picklists read, workflow trigger + `log_list` polling, and connector
+configuration create (returns `config_id`) work; configuration DELETE and
+module-record create (alerts) return `403` — use `existing_record` in test
+plans. Adding **SOC Analyst** enables alert Create/Read/Update (Delete still
+`403`). Minimal verified entitlement for the full workflow incl. synthetic test
+data = **Playbook Administrator + SOC Analyst**; only workflow/config/record
+deletes remain manual. Permissions table gains Connectors-Install and
+Configurations-Create rows.
+
+**v2.2** — Missing-connector handling: agent may offer install-then-discover on
+dev with explicit user approval. New
+generation rule 9: native step types + Jinja first, built-in utility connectors
+second, Code Snippet last resort with mandatory justification.
 
 **v2.1** — All endpoints verified against a live 7.6.1 instance. Discovery now
 uses `/api/integration/connectors/` + `/api/integration/configuration/` (with
