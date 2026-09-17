@@ -34,7 +34,7 @@ producing JSON** — FortiSOAR hard-fails on invalid structure.
 | File | Use for |
 |---|---|
 | `reference/playbook-json-schema.md` | The JSON export structure: shapes, every Workflow field, all 22 step types with argument skeletons + examples, routes, groups, picklists, positioning, validation rules. This is the authoritative schema. |
-| `reference/connector-operations.md` | Catalog of all 3rd-party connector operations harvested from the official `fortinet-fortisoar` GitHub org (379 connectors, 3339 operations). For each connector: slug, version, operation → title, and parameters (name, title, required). **Read this before writing any connector-call step** to pick the exact `operation`/`operationTitle` and `params` keys. Full parameter detail (descriptions, data types, choices, defaults) is in `OFFICIAL/_connector-manifests.json`. |
+| `reference/connector-operations.md` | Catalog of all 3rd-party connector operations harvested from the official `fortinet-fortisoar` GitHub org (379 connectors, 3339 operations). For each connector: slug, version, operation → title, and parameters (name, title, required). **Read this before writing any connector-call step** to pick the exact `operation`/`operationTitle` and `params` keys. Full parameter detail (descriptions, data types, choices, defaults) is in `reference/connector-manifests.json`. |
 | `reference/jinja-cookbook.md` | 50+ real production Jinja patterns (trigger input, params, REST request, step output, for_each item, picklist/fromIRI filters, arrow dates, list mutation, conditionals) harvested from 1367 official playbooks. Use as copy-paste templates. |
 | `reference/guide-condensed.md` | Concepts from the official Playbooks Guide: trigger types, variables & Jinja, routing/conditions, connector operations, error handling, best practices, step-result Jinja patterns. |
 | `reference/step-types-quickref.md` | One-page lookup: stepType UUID → label → argument skeleton + routing notes. Use for quick lookups while building. |
@@ -374,7 +374,7 @@ official `fortinet-fortisoar` GitHub org. **Before generating any connector-call
 step, look up the connector in `reference/connector-operations.md`** — it lists
 every operation (with title, category, and parameters) for 379 3rd-party connectors
 (3339 operations). For full parameter schemas (descriptions, data types, choices,
-defaults), read `OFFICIAL/_connector-manifests.json` (the raw harvested manifests).
+defaults), read `reference/connector-manifests.json` (the raw harvested manifests).
 
 - The GitHub repo is named `connector-<slug>`; the playbook `connector` field uses
   the manifest `name` (often the same, sometimes with a `-premium`/`-enterprise`
