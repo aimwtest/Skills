@@ -45,6 +45,32 @@ playbook (workflow) JSON — import-ready for FortiSOAR 7.6.x.
   playbooks (step-type usage, trigger patterns, real argument shapes, Jinja,
   routing, groups, macros, field surveys).
 
+## API key permissions (for live features)
+
+The live features (instance discovery, self-test) authenticate with
+`Authorization: API-KEY <key>`. Grant these on a **dedicated service user**;
+verified against FortiSOAR 7.6.1.
+
+**Profile A — Read-only** (discovery + generation + static validation):
+
+| Permission module | Access | Used for |
+|---|---|---|
+| Connectors | Read | `GET /api/integration/connectors/`, `GET /api/integration/configuration/` — installed connectors, versions, config UUIDs, health |
+| Picklists | Read | `GET /api/3/picklists`, `GET /api/3/picklist_names` — real picklist IRIs |
+| Playbooks / Workflows | Read *(optional)* | `GET /api/3/workflows` — avoids import name conflicts |
+
+**Profile B — Write** (adds the live self-test loop, dev instance only):
+
+| Permission module | Access | Used for |
+|---|---|---|
+| Playbooks / Workflows | Full CRUD + Execute | Import (create), trigger, cleanup. **Without Update+Delete**, single-workflow GET/PUT/DELETE return 403 and test workflows need manual UI deletion |
+| Alerts *(or the test-data module)* | Create, Read, Update, Delete | Synthetic test records; Update only for on-update trigger tests |
+| Schedules | Read, Update | Only for schedule-triggered playbook tests |
+
+Notes: the MCP discovery method (`/mcp/*` endpoints) enforces the same role
+model. If you want least privilege day-to-day, issue two keys — Profile A for
+generation, Profile B on the dev instance for self-testing.
+
 ## Repository layout
 
 ```
