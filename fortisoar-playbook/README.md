@@ -1,10 +1,26 @@
 # fortisoar-playbook
 
-A reusable AI-agent skill that designs and generates **FortiSOAR playbook (workflow)
-JSON** — import-ready for FortiSOAR 7.6.x.
+**v2.0** — now with live instance discovery, automated validation, and an import-test loop.
+
+A reusable AI-agent skill that designs, generates, **and self-tests** FortiSOAR
+playbook (workflow) JSON — import-ready for FortiSOAR 7.6.x.
 
 ## What it gives you
 
+- **Instance discovery (v2)** — `scripts/fsr_discover.py` pulls your instance's
+  installed connectors, versions, configuration UUIDs, and picklists into a local
+  profile, so generated connector steps bind to **real configs** instead of
+  placeholders (the #1 cause of broken imports).
+- **Automated validation (v2)** — `scripts/fsr_validate.py` enforces the whole
+  pre-import checklist as code: UUID integrity, routing, stepType typos,
+  placeholder IRIs, connector operation/params vs. the catalog, and (with the
+  instance profile) installed-version and config-UUID checks.
+- **Live import-test loop (v2)** — `scripts/fsr_import_test.py` imports the
+  playbook into a dev instance via the API, optionally creates test data, triggers
+  the playbook, and reports per-criterion pass/fail. Guarded against production.
+- **Clarification gate + test plan (v2)** — the skill will not generate JSON on a
+  vague request: it asks until the requirement is solid, plays it back, and agrees
+  a test plan (scope, generated test data, success criteria) before building.
 - **Schema reference** — every Workflow field, all 22 step types with argument
   skeletons + examples, routes, groups, picklists, positioning, validation rules.
 - **Connector operations catalog** — 379 connectors / 3339 operations harvested
@@ -41,6 +57,11 @@ fortisoar-playbook/
 │   ├── step-types-quickref.md                  # one-page stepType lookup
 │   ├── guide-condensed.md                      # concepts from the official Playbooks Guide
 │   └── official-playbook-analysis.md           # study of 1367 official playbooks
+├── scripts/                                    # v2: python3 stdlib-only, no pip installs
+│   ├── fsr_common.py                           # shared config/auth/HTTP helpers
+│   ├── fsr_discover.py                         # pull instance profile (connectors, configs, picklists)
+│   ├── fsr_validate.py                         # automated pre-import validation
+│   └── fsr_import_test.py                      # live import + execute + per-criterion report
 └── templates/
     ├── skeleton-collection.json                # Shape A: collection export wrapper
     ├── skeleton-playbook.json                  # Shape B: bare Workflow

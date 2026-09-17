@@ -14,11 +14,11 @@
     "resource": {
       "name": "Approver Approval To Implement - {{vars.input.records[0].title}}",
       "dueBy": "{{vars.input.records[0].dueDate}}",
-      "status": "/api/3/picklists/TODO-TASK-STATUS-PICKLIST",
-      "priority": "/api/3/picklists/TODO-TASK-PRIORITY-PICKLIST",
+      "status": "/api/3/picklists/7669725a-28cc-4b19-98a3-9ca71e0f88f4",
+      "priority": "/api/3/picklists/539083a6-01f6-4ff9-a588-778cfdad4671",
       "description": "Approval to proceed with the implementation.",
       "assignedOnDate": "{{arrow.utcnow().int_timestamp}}",
-      "assignedToPerson": "TODO-USER-IRI"
+      "assignedToPerson": "{{vars.input.records[0]['@owner']}}"
     },
     "collection": "tasks",
     "step_variables": []

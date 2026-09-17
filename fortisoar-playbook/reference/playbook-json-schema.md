@@ -1031,6 +1031,32 @@ Start steps declare `resources` (array) / `resource` (string): `"alerts"`,
 | `18c5c903-eda5-494d-aa7e-f28b479681ac` | TypeOfFeed — domain feed |
 | `afb18b7f-510b-471a-9b9c-7f4646edd4bb` | External channel list (awaiting playbook) |
 
+### Task / Manual Task picklists (stepType `dc6ac63d`)
+
+| UUID | Picklist |
+|---|---|
+| `ff599189-3eeb-4c86-acb0-a7915e85ac3b` | Message type (task) |
+| `7669725a-28cc-4b19-98a3-9ca71e0f88f4` | Task status — "Open" |
+| `539083a6-01f6-4ff9-a588-778cfdad4671` | Task priority — "High" |
+
+### Workflow-level picklists
+
+| UUID | Picklist |
+|---|---|
+| `2b563c61-ae2c-41c0-a85a-c9709585e3f2` | Priority — "Medium" (workflow `priority` field) |
+| `15c1e8c9-22bf-4e66-8fbb-0a502d4a4a3f` | Playbook origin (workflow `playbookOrigin` field) |
+
+### Severity / Alert status (use Jinja picklist filter instead of hardcoding)
+
+For severity and alert status, prefer the Jinja `picklist` filter — it resolves
+the correct UUID at runtime and is instance-independent:
+
+```
+{{"Severity" | picklist("Critical", "@id")}}
+{{"Severity" | picklist("High", "@id")}}
+{{"Status" | picklist("Closed", "@id")}}
+```
+
 If you don't know a picklist UUID, use a placeholder comment and tell the user to
 look it up in their FortiSOAR instance.
 
@@ -1063,3 +1089,5 @@ look it up in their FortiSOAR instance.
 13. **For-each loops route implicitly** — the for_each step → body → (back to for_each OR forward). No join step needed. See §4.2.
 14. **Connector slug accuracy**: use exact slugs from `connector-operations.md`. The GitHub repo name may differ from the playbook `connector` slug (e.g. `connector-virustotal-premium` repo → `virustotal-premium` slug; but some playbook slugs like `virustotal` are built-in variants not on GitHub).
 15. **Built-in connectors** (`cyops_utilities`, `smtp`, `ssh`, `exchange`, `slack`, `mysql`, `http`, `code-snippet`, `sentinelone`, `whois-rdap`, etc.) ship with the platform — no GitHub repo. For the `cyops_utilities` connector step (stepType `0109f35d`), omit `config`/`name`/`pickFromTenant`. For other built-ins, include those keys as usual.
+16. **Never use `/api/3/picklists/TODO-*` or `/api/3/*-TODO-*` IRIs** — FortiSOAR tries to resolve every `/api/3/...` IRI during import. Invalid IRIs cause a misleading "Some of the Playbooks already exist" error. Use real picklist UUIDs (see §9) or Jinja `picklist` filters. For connector configs, use `""` (empty string) or omit — the user binds in the designer.
+17. **Verify every stepType UUID character-by-character** against `step-types-quickref.md`. A single-character typo (e.g. `dc6ac63d-c5a5-472b` vs `472f`) produces a valid-looking but unrecognized step type, causing the same misleading "already exists" import error. The "already exists" error is FortiSOAR's catch-all for import validation failures — it does NOT always mean a name/UUID conflict.

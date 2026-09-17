@@ -1,13 +1,18 @@
 ---
 name: fortisoar-playbook
-description: Design and generate FortiSOAR playbooks (workflow JSON). Use when the user mentions FortiSOAR, playbook, SOAR workflow, playbook collection, connector operations, playbook JSON import/export, or wants to automate a security process in FortiSOAR. Covers trigger setup, step types, routing, Jinja templating, and producing import-ready JSON.
+description: Design, generate, and self-test FortiSOAR playbooks (workflow JSON). Use when the user mentions FortiSOAR, playbook, SOAR workflow, playbook collection, connector operations, playbook JSON import/export, or wants to automate a security process in FortiSOAR. Covers trigger setup, step types, routing, Jinja templating, instance connector discovery, static validation, live import-testing, and producing import-ready JSON.
 ---
 
-# FortiSOAR Playbook Builder
+# FortiSOAR Playbook Builder — v2
 
 This skill helps design and generate FortiSOAR playbook JSON that can be imported
-into FortiSOAR 7.6.x. It is self-contained: all reference material is bundled in
-`reference/` and `templates/` relative to this file.
+into FortiSOAR 7.6.x — and **verifies it against a live instance** before handing
+it over. It is self-contained: all reference material is bundled in `reference/`,
+`templates/`, and `scripts/` relative to this file.
+
+**New in v2:** instance discovery (real connector versions + config UUIDs),
+a clarification gate (no generation on vague requirements), an agreed test plan
+before generation, automated static validation, and a guarded live import-test loop.
 
 ## When to use
 
@@ -40,11 +45,53 @@ Templates live in `templates/`:
   `connector-call`, `condition`, `call-playbook`, `add-comment`, `end-noop`,
   `manual-task`, `for-each-create`.
 
+## Scripts (v2)
+
+All scripts are python3 stdlib-only — no pip installs. They resolve FortiSOAR
+credentials from `--host`/`--api-key` flags, `FORTISOAR_HOST`/`FORTISOAR_API_KEY`
+env vars, or `<workspace>/.fortisoar/config.json` (see Step 0).
+
+| Script | Purpose |
+|---|---|
+| `scripts/fsr_discover.py` | Pull the instance profile (installed connectors + versions, configuration names/UUIDs, picklists) into `.fortisoar/instance-profile.json`. |
+| `scripts/fsr_validate.py` | Automate the Step 4 static checklist against a generated playbook JSON; with `--profile` also checks installed connectors, versions, and config UUIDs. Exit 1 on any ERROR. |
+| `scripts/fsr_import_test.py` | Import the playbook into the instance via API; optionally execute a test plan (create test data → trigger → poll → per-criterion pass/fail). Refuses production unless explicitly allowed. |
+
+Endpoint note: FortiSOAR ships interactive API docs at `https://<host>/swagger`.
+If a script reports candidate-endpoint failure, check Swagger on the instance and
+update the `*_CANDIDATES` list at the top of that script.
+
 ## Workflow: how to build a playbook
 
-### Step 1 — Clarify the use case
+### Step 0 — Instance profile (do this first, once per workspace)
 
-Before writing any JSON, confirm with the user (ask only what is not already stated):
+Playbook steps that call connectors must bind to a **real installed connector
+version** and a **real configuration UUID** — placeholders are the #1 cause of
+broken imports. Before generating anything:
+
+1. Check for `<workspace>/.fortisoar/config.json` or `FORTISOAR_HOST` /
+   `FORTISOAR_API_KEY` env vars.
+2. If none exist, **ask the user for their FortiSOAR IP/hostname and API key**,
+   and whether the instance is dev or production. Write:
+   ```json
+   // .fortisoar/config.json
+   { "host": "https://<fsr-ip-or-host>", "api_key": "<key>", "environment": "dev" }
+   ```
+   Tell the user to add `.fortisoar/` to `.gitignore`. Never commit it, never log
+   the key, never embed it in playbook JSON.
+3. Run `python3 scripts/fsr_discover.py` (add `--insecure` for self-signed dev
+   certs). Review `.fortisoar/instance-profile.json` with the user: which
+   connectors are installed, which configs exist.
+4. **No API access?** Fallback: ask the user to export one existing playbook from
+   their instance that uses a configured connector, and harvest real `config`
+   UUIDs from it. Say clearly that live validation (Step 4.5) is then unavailable.
+
+### Step 1 — Clarify the use case (GATE: no generation until requirements are solid)
+
+**If anything about the request is unclear, ask.** A vague one-liner
+("enrich IOCs") is not a requirement. Ask one focused question at a time and keep
+asking until every item below is nailed down. Do not proceed to Step 2, and
+absolutely do not write JSON, while any of these is unknown or assumed:
 
 1. **Trigger type** — how does the playbook start?
    - Manual button on a module record (e.g. a button on Alerts)
@@ -52,26 +99,56 @@ Before writing any JSON, confirm with the user (ask only what is not already sta
    - On field/status change (auto-fires on update)
    - Referenced (called from another playbook — sub-playbook)
    - REST API endpoint (inbound HTTP)
+   - Scheduled (runs on a cron-like schedule — see Schedule API)
 2. **Module(s)** — which FortiSOAR module(s)? (alerts, indicators, incidents, threat_intel_feeds, vulnerabilities, assets, etc.)
-3. **Input** — does the playbook need user input (a form on the manual trigger) or parameters (for a referenced playbook)? What fields?
-4. **Logic / steps** — what should it do, in order? What connectors, conditions, loops?
+3. **Input** — user input form (manual trigger) or parameters (referenced)? What fields, with what example values?
+4. **Logic / steps** — what should it do, in order? Which connectors (check them
+   against the instance profile from Step 0 — if a requested connector is not
+   installed, say so and propose alternatives; never guess)? What conditions,
+   what happens on each branch? What loops?
 5. **Output** — comment on the record? create/update a record? send email? call a sub-playbook? return a value to a parent?
+6. **Edge cases** — what should happen when a connector call fails, returns
+   empty, or the record field is missing?
 
-If the user has already given a clear description, do not re-ask everything — confirm your understanding in 1-2 lines and proceed.
+When you believe the requirement is solid, play it back in 3-6 lines
+("Here's what I'll build: …") and get an explicit "yes". That playback is the gate.
 
-### Step 2 — Design the flow
+### Step 2 — Design the flow AND the test plan
 
-Lay out the steps and routes mentally (or in a short list to the user):
+Present **two artifacts** for approval before generating:
 
+**A. The flow:**
 ```
 Start (trigger) → [Set Variable] → [Connector: ...] → [Condition: ...]
   → Yes: [Create Record / Comment] → End
   → No:  [Send Email] → End
 ```
-
 - Every playbook needs exactly one Start step and at least one End step.
 - Routes connect steps by UUID; the route `name` is `"<source> -> <target>"`.
-- Use Groups (note/block) to annotate sections; optional but recommended for readability.
+- Use Groups (note/block) to annotate sections; optional but recommended.
+
+**B. The test plan** — how we will prove the playbook works in Step 4.5:
+
+| Element | Define |
+|---|---|
+| What to test | Scope: (a) import-only, (b) import + execute (default), (c) execute every branch |
+| Test data | You generate it: synthetic record JSON with field values matching what the playbook's Jinja reads; one dataset per condition branch where feasible. User confirms or overrides values that must mean something to a real connector (e.g. an IOC that scores malicious vs clean). Fallback: an existing record IRI in dev. |
+| Success criteria | Explicit pass/fail list, e.g. import OK → job status Finished → step "Enrich" Success → comment exists on record |
+
+Trigger drives test data:
+
+| Trigger | Test data | Default success criteria |
+|---|---|---|
+| Manual button | Synthetic record (or existing IRI) | Executes on record, job Finished |
+| On Create | Script creates record with defined fields | Trigger fires, job Finished |
+| On Update | Create → update watched field | Trigger fires on update, job Finished |
+| Referenced | Call with declared test params | Returns expected output |
+| REST endpoint | Sample JSON payload | Endpoint 200, job Finished |
+| Scheduled | Trigger schedule immediately via API | Job Finished |
+
+Get the user's approval on both artifacts. Then write the test plan to
+`.fortisoar/test-plan-<playbook-name>.json` (shape documented in
+`scripts/fsr_import_test.py`).
 
 ### Step 3 — Generate the JSON
 
@@ -102,17 +179,21 @@ unless the user asks for a bare single playbook.
    object (`"parameters": ["name1", "name2"]`) AND expose them on the Start step
    (via `step_variables.input.params` for referenced starts, or `inputVariables`
    for manual button forms).
-7. **Picklists**: reference by IRI `/api/3/picklists/<uuid>`. Common ones are in
-   the schema reference. If you don't know a picklist UUID, use a placeholder
+7. **Picklists**: reference by IRI `/api/3/picklists/<uuid>`. Use real UUIDs from
+   the instance profile (Step 0) when available; otherwise common ones are in the
+   schema reference. If you don't know a picklist UUID, use a placeholder
    comment `"TODO: replace with correct picklist IRI for <value>"` and tell the
    user to look it up in their FortiSOAR instance.
 8. **Connector calls**: look up the connector in `reference/connector-operations.md`
    to get the exact `connector` slug, `operation`, `operationTitle`, `version`, and
    the `params` keys (parameter names + which are required). Include `connector`,
    `operation`, `operationTitle`, `version`, `params`, `step_variables`. For external
-   connectors add `name` (display name), `config` (connector-config UUID — placeholder
-   if unknown), `pickFromTenant: false`. For the built-in `cyops_utilities` connector
-   (stepType `0109f35d`) the `config`/`name`/`pickFromTenant` keys are omitted.
+   connectors add `name` (display name), `config`, `pickFromTenant: false`.
+   - **Config binding (v2)**: `config` MUST be the UUID of a real configuration
+     from `.fortisoar/instance-profile.json` (or harvested from a user-provided
+     export). `version` MUST match the installed version in the profile. If the
+     connector is not in the profile's installed list, STOP and tell the user —
+     do not generate the step with guessed values.
    - **Slug accuracy**: the GitHub repo may be `connector-<slug>` but the playbook
      `connector` field uses the manifest `name` (e.g. `virustotal-premium`). A few
      built-in connectors (`cyops_utilities`, `smtp`, `ssh`, `exchange`, `slack`,
@@ -120,6 +201,8 @@ unless the user asks for a bare single playbook.
      platform and are NOT in the GitHub catalog — consult the in-instance connector
      docs for their operations. `cyops_utilities` ops (`no_op`, `make_cyops_request`,
      `format_richtext`, `json_to_html`, etc.) are listed in the schema reference §6.
+   - For the built-in `cyops_utilities` connector (stepType `0109f35d`) the
+     `config`/`name`/`pickFromTenant` keys are omitted.
 9. **End step**: every playbook path must terminate in an End step
    (`cyops_utilities` / `no_op` / operationTitle "Utils: No Operation").
 10. **Required Workflow fields** (minimum for valid import): `@type:"Workflow"`,
@@ -134,11 +217,15 @@ unless the user asks for a bare single playbook.
     Give the collection a `uuid`, `name`, `description`, `visible:true`,
     `deletedAt:null`, `recordTags:[]`, `importedBy:[]`.
 12. **Output the file** to `<meaningful-name>.json` in the current directory
-    (or a path the user specifies). Then tell the user the filename and how to import.
+    (or a path the user specifies).
 
-### Step 4 — Validate
+### Step 4 — Validate (automated)
 
-Before finishing, self-check the generated JSON against these rules:
+Run the validator — it enforces the checklist below as code:
+
+```bash
+python3 scripts/fsr_validate.py <playbook.json> --profile .fortisoar/instance-profile.json
+```
 
 - [ ] Valid JSON (no trailing commas, no comments).
 - [ ] Every step has a unique `uuid`; every route and group too.
@@ -153,20 +240,72 @@ Before finishing, self-check the generated JSON against these rules:
       condition has `"default": true` if a default branch is wanted.
 - [ ] `versions` is `[]` (never embed snapshots).
 - [ ] Connector calls: `operation`/`operationTitle`/`version` match a real entry in
-      `connector-operations.md`; `params` keys match the operation's parameters.
+      `connector-operations.md`; `params` keys match the operation's parameters;
+      required params present.
+- [ ] **No `TODO` or placeholder text inside `/api/3/...` IRIs** — every picklist
+      IRI, connector config, or step IRI must be either a real UUID or a Jinja
+      expression. Invalid `/api/3/picklists/TODO-*` IRIs cause a misleading
+      "Some of the Playbooks already exist" import error.
+- [ ] **Every stepType UUID verified character-by-character** against
+      `step-types-quickref.md`. A single-character typo (e.g. `472b` vs `472f`)
+      produces an unrecognized step type and the same misleading import error.
+- [ ] **(with `--profile`)** Connector installed on the instance, `version` matches
+      installed version, `config` UUID exists in the instance's configurations.
 
-If any check fails, fix it before presenting to the user.
+Fix every ERROR and re-run until clean. Review WARNs and fix or justify each.
+
+### Step 4.5 — Live import test (when API access exists)
+
+Prove the playbook in the dev instance using the approved test plan:
+
+```bash
+python3 scripts/fsr_import_test.py <playbook.json> --run \
+    --test-plan .fortisoar/test-plan-<name>.json --cleanup
+```
+
+1. **Import** — the script imports via the same API the UI uses and reports the
+   response. On failure, map the error to a cause (see Step 5's known traps),
+   fix the JSON, re-validate (Step 4), re-import. **Max 3 fix rounds**, then stop
+   and show the user the raw error and your diagnosis.
+2. **Execute** — with `--run`, the script creates the test data, triggers the
+   playbook, polls execution, and prints **per-criterion PASS/FAIL**. A failed
+   criterion means the playbook (or the test data) is wrong — diagnose, fix,
+   re-run. Do not declare success on "it imported" alone.
+3. **Guardrails** — target only the instance from Step 0 marked `"environment":
+   "dev"`. If the user explicitly asks to test against production, get explicit
+   in-chat confirmation, then pass `--allow-production`. Use `--cleanup` so test
+   records and imported workflows don't accumulate.
+4. **No API access?** Skip this page, say so plainly, and hand over with the
+   manual import instructions (Step 5) plus the test plan for the user to run
+   through in the UI.
 
 ### Step 5 — Explain import
 
 Tell the user:
 1. In FortiSOAR, go to **Automation > Playbooks**.
 2. Click **Import** and select the generated JSON file.
+   (If Step 4.5 already passed, say the import is verified and this is only
+   needed for their production instance.)
 3. If importing a collection, ensure the collection name doesn't conflict with an
    existing one (or check "Replace existing playbook collection").
 4. After import, open the playbook in the designer, verify connector configs are
-   bound (steps with a placeholder `config` UUID need to be pointed at a real
-   connector configuration), and **Activate** it.
+   bound (should already be correct if Step 0 was done), and **Activate** it.
+5. **If the import fails with "Some of the Playbooks already exist"**: this error
+   is FortiSOAR's catch-all for import validation failures — it does NOT always
+   mean a name/UUID conflict. Common causes: (a) invalid `/api/3/picklists/TODO-*`
+   IRIs, (b) a typo in a stepType UUID, (c) soft-deleted records in the recycle
+   bin. Check all stepType UUIDs against `step-types-quickref.md`, replace any
+   placeholder IRIs with real UUIDs or Jinja picklist filters, and purge the
+   recycle bin.
+
+## Credential handling (rules)
+
+- Ask for the FortiSOAR host + API key only when Step 0 runs; store them in
+  `<workspace>/.fortisoar/config.json` with the user's knowledge.
+- Never print the API key in chat or logs, never write it into playbook JSON,
+  never commit `.fortisoar/` — remind the user to gitignore it.
+- Scripts mark the instance `environment`; treat `"prod"` as import-only with
+  explicit per-run user confirmation.
 
 ## Modifying existing playbooks
 
@@ -175,7 +314,8 @@ If the user gives you an existing playbook JSON to edit:
 - Preserve all UUIDs you don't need to change.
 - Match the existing style (coordinate spacing, naming, group usage).
 - Only add/change what the user asked for — surgical edits.
-- Re-run the Step 4 validation checklist on the changed parts.
+- Re-run Step 4 validation (`fsr_validate.py`) on the whole file, and Step 4.5
+  if the change affects connector steps or logic paths.
 
 ## Connector knowledge
 
@@ -197,6 +337,8 @@ defaults), read `OFFICIAL/_connector-manifests.json` (the raw harvested manifest
   info dialog in the playbook designer).
 - If you need a connector NOT in the catalog at all (very new or custom), ask the
   user to export its sample playbook or paste its operation list from the UI.
+- The catalog is static; the **instance profile (Step 0) is live truth**. When
+  they disagree (e.g. instance runs an older connector version), the profile wins.
 
 ## Official playbook analysis
 
@@ -205,3 +347,14 @@ The `OFFICIAL/` folder (in the workspace, not the skill bundle) contains
 playbooks. A full analysis is in `OFFICIAL/_analysis.md` covering step-type usage,
 trigger patterns, real argument shapes, Jinja patterns, routing, groups, macros,
 and field surveys. Consult it when you need a real-world example of a pattern.
+
+## Changelog
+
+**v2.0** — Instance discovery (`fsr_discover.py`): connector steps bind to real
+installed versions and configuration UUIDs. Clarification gate in Step 1: no
+generation until requirements are played back and confirmed. Test plan agreed in
+Step 2 (scope, generated test data, success criteria). Static validation automated
+(`fsr_validate.py`). Live import-test loop with per-criterion pass/fail
+(`fsr_import_test.py`), guarded against production. Credential handling rules.
+
+**v1.0** — Initial: schema/catalog/Jinja references, templates, manual checklist.
