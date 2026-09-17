@@ -3,16 +3,18 @@ name: fortisoar-playbook
 description: Design, generate, and self-test FortiSOAR playbooks (workflow JSON). Use when the user mentions FortiSOAR, playbook, SOAR workflow, playbook collection, connector operations, playbook JSON import/export, or wants to automate a security process in FortiSOAR. Covers trigger setup, step types, routing, Jinja templating, instance connector discovery, static validation, live import-testing, and producing import-ready JSON.
 ---
 
-# FortiSOAR Playbook Builder — v2
+# FortiSOAR Playbook Builder — v2.1
 
 This skill helps design and generate FortiSOAR playbook JSON that can be imported
 into FortiSOAR 7.6.x — and **verifies it against a live instance** before handing
 it over. It is self-contained: all reference material is bundled in `reference/`,
 `templates/`, and `scripts/` relative to this file.
 
-**New in v2:** instance discovery (real connector versions + config UUIDs),
-a clarification gate (no generation on vague requirements), an agreed test plan
-before generation, automated static validation, and a guarded live import-test loop.
+**v2.1:** every API endpoint verified against a live 7.6.1 instance; MCP added as
+a second discovery method. **v2.0:** instance discovery (real connector versions +
+config UUIDs), clarification gate (no generation on vague requirements), agreed
+test plan before generation, automated static validation, guarded live import-test
+loop.
 
 ## When to use
 
@@ -44,6 +46,9 @@ Templates live in `templates/`:
   `start-on-create`, `start-referenced`, `start-rest`, `set-variable`,
   `connector-call`, `condition`, `call-playbook`, `add-comment`, `end-noop`,
   `manual-task`, `for-each-create`.
+- `templates/get-uuid-config.json` — Helper referenced playbook for MCP-based
+  discovery (Step 0, Method 2): returns connector ↔ configuration `config_id`
+  pairs. Import once into the instance, run it, harvest the output.
 
 ## Scripts (v2)
 
@@ -57,9 +62,10 @@ env vars, or `<workspace>/.fortisoar/config.json` (see Step 0).
 | `scripts/fsr_validate.py` | Automate the Step 4 static checklist against a generated playbook JSON; with `--profile` also checks installed connectors, versions, and config UUIDs. Exit 1 on any ERROR. |
 | `scripts/fsr_import_test.py` | Import the playbook into the instance via API; optionally execute a test plan (create test data → trigger → poll → per-criterion pass/fail). Refuses production unless explicitly allowed. |
 
-Endpoint note: FortiSOAR ships interactive API docs at `https://<host>/swagger`.
-If a script reports candidate-endpoint failure, check Swagger on the instance and
-update the `*_CANDIDATES` list at the top of that script.
+Endpoint note: all endpoints in these scripts were verified against a live 7.6.1
+instance. Auth is `Authorization: API-KEY <key>`. If your version behaves
+differently, the instance's interactive API docs at `https://<host>/swagger` are
+ground truth — update the paths at the top of the affected script.
 
 ## Workflow: how to build a playbook
 
@@ -67,7 +73,10 @@ update the `*_CANDIDATES` list at the top of that script.
 
 Playbook steps that call connectors must bind to a **real installed connector
 version** and a **real configuration UUID** — placeholders are the #1 cause of
-broken imports. Before generating anything:
+broken imports. Two methods; prefer Method 1, use Method 2 when the agent
+environment has FortiSOAR MCP servers configured.
+
+**Method 1 — REST discovery script (works anywhere):**
 
 1. Check for `<workspace>/.fortisoar/config.json` or `FORTISOAR_HOST` /
    `FORTISOAR_API_KEY` env vars.
@@ -81,10 +90,27 @@ broken imports. Before generating anything:
    the key, never embed it in playbook JSON.
 3. Run `python3 scripts/fsr_discover.py` (add `--insecure` for self-signed dev
    certs). Review `.fortisoar/instance-profile.json` with the user: which
-   connectors are installed, which configs exist.
-4. **No API access?** Fallback: ask the user to export one existing playbook from
-   their instance that uses a configured connector, and harvest real `config`
-   UUIDs from it. Say clearly that live validation (Step 4.5) is then unavailable.
+   connectors are installed, which configs exist. Verified endpoints (7.6.1):
+   `GET /api/integration/connectors/` (paged), `GET /api/integration/configuration/`
+   (config UUIDs + health), `GET /api/3/picklists`. Auth header:
+   `Authorization: API-KEY <key>`.
+
+**Method 2 — FortiSOAR MCP servers (when configured):**
+
+FortiSOAR 7.6.x exposes MCP endpoints (`/mcp/modules/`, `/mcp/soc/`,
+`/mcp/utility/`, `/mcp/playbooks/`) with the same `Authorization: API-KEY <key>`
+header. If the user's agent config (e.g. `opencode.json` `mcp` section) has
+these configured, you can call MCP tools directly instead of the script —
+same profile fields: installed connectors + versions, configuration names/UUIDs,
+picklists. A ready-made helper is bundled: `templates/get-uuid-config.json`
+(a referenced playbook that returns connector↔config_id pairs); import it once,
+run it via the playbooks MCP, and harvest its output. Persist the results to
+`.fortisoar/instance-profile.json` in the same shape the script writes, so the
+rest of the workflow (validation, generation) is method-agnostic.
+
+**No API access at all?** Fallback: ask the user to export one existing playbook
+from their instance that uses a configured connector, and harvest real `config`
+UUIDs from it. Say clearly that live validation (Step 4.5) is then unavailable.
 
 ### Step 1 — Clarify the use case (GATE: no generation until requirements are solid)
 
@@ -203,8 +229,10 @@ unless the user asks for a bare single playbook.
      `format_richtext`, `json_to_html`, etc.) are listed in the schema reference §6.
    - For the built-in `cyops_utilities` connector (stepType `0109f35d`) the
      `config`/`name`/`pickFromTenant` keys are omitted.
-9. **End step**: every playbook path must terminate in an End step
-   (`cyops_utilities` / `no_op` / operationTitle "Utils: No Operation").
+9. **End step**: terminate every playbook path in an End step (`cyops_utilities` /
+   `no_op` / operationTitle "Utils: No Operation") — official guidance. FortiSOAR
+   tolerates playbooks without one, so existing exports may lack it; still include
+   it in anything you generate.
 10. **Required Workflow fields** (minimum for valid import): `@type:"Workflow"`,
     `name`, `isActive`, `debug`, `singleRecordExecution`, `remoteExecutableFlag`,
     `parameters`, `synchronous`, `collection`, `versions:[]`, `triggerStep`,
@@ -260,13 +288,21 @@ Prove the playbook in the dev instance using the approved test plan:
 
 ```bash
 python3 scripts/fsr_import_test.py <playbook.json> --run \
-    --test-plan .fortisoar/test-plan-<name>.json --cleanup
+    --test-plan .fortisoar/test-plan-<name>.json --regen-uuids --cleanup
 ```
 
-1. **Import** — the script imports via the same API the UI uses and reports the
-   response. On failure, map the error to a cause (see Step 5's known traps),
-   fix the JSON, re-validate (Step 4), re-import. **Max 3 fix rounds**, then stop
-   and show the user the raw error and your diagnosis.
+Verified mechanics (7.6.1): import is direct CRUD (`POST /api/3/workflow_collections`
++ `POST /api/3/workflows` with nested steps/routes — the import-wizard endpoints
+`/api/import/` + `import_jobs` acknowledge but never process via API); execution is
+`POST /api/triggers/1/notrigger/<wf-uuid>`; polling is
+`POST /api/wf/api/workflows/log_list/?task_id=<id>`.
+
+1. **Import** — the script imports and verifies visibility in the workflow list.
+   On failure, map the error to a cause (see Step 5's known traps), fix the JSON,
+   re-validate (Step 4), re-import. **Max 3 fix rounds**, then stop and show the
+   user the raw error and your diagnosis. Re-runs need `--regen-uuids` (FortiSOAR
+   rejects duplicate UUIDs with 409; soft-deleted name conflicts are auto-suffixed).
+   The script forces `isActive=true` on test imports so they can be triggered.
 2. **Execute** — with `--run`, the script creates the test data, triggers the
    playbook, polls execution, and prints **per-criterion PASS/FAIL**. A failed
    criterion means the playbook (or the test data) is wrong — diagnose, fix,
@@ -274,8 +310,11 @@ python3 scripts/fsr_import_test.py <playbook.json> --run \
 3. **Guardrails** — target only the instance from Step 0 marked `"environment":
    "dev"`. If the user explicitly asks to test against production, get explicit
    in-chat confirmation, then pass `--allow-production`. Use `--cleanup` so test
-   records and imported workflows don't accumulate.
-4. **No API access?** Skip this page, say so plainly, and hand over with the
+   records and collections don't accumulate. **Permission note:** if the API key
+   lacks Playbooks update/delete, the workflow itself can't be auto-cleaned
+   (script warns) — delete test workflows in the UI, and purge the recycle bin
+   (soft-deleted collections/workflows still block re-creation by name/uuid).
+4. **No API access?** Skip this step, say so plainly, and hand over with the
    manual import instructions (Step 5) plus the test plan for the user to run
    through in the UI.
 
@@ -306,6 +345,17 @@ Tell the user:
   never commit `.fortisoar/` — remind the user to gitignore it.
 - Scripts mark the instance `environment`; treat `"prod"` as import-only with
   explicit per-run user confirmation.
+
+**Permissions the API key needs** (verified against 7.6.1; assign to a dedicated
+service user):
+
+| Area | Access | Used for |
+|---|---|---|
+| Connectors | Read | discovery: `/api/integration/connectors/`, `/api/integration/configuration/` |
+| Picklists | Read | discovery + test data picklist IRIs |
+| Playbooks / Workflows | Full CRUD + Execute | import (create), trigger, **cleanup** — note: a key with create-only can import and list, but single-workflow GET/PUT/DELETE return 403, leaving test workflows for manual UI cleanup |
+| Test module(s) (Alerts, …) | Create, Read, Update, Delete | synthetic test records |
+| Schedules | Read, Update | only for testing schedule-triggered playbooks |
 
 ## Modifying existing playbooks
 
@@ -349,6 +399,17 @@ trigger patterns, real argument shapes, Jinja patterns, routing, groups, macros,
 and field surveys. Consult it when you need a real-world example of a pattern.
 
 ## Changelog
+
+**v2.1** — All endpoints verified against a live 7.6.1 instance. Discovery now
+uses `/api/integration/connectors/` + `/api/integration/configuration/` (with
+config health). Import-test rewritten to direct CRUD (`POST /api/3/workflows`
+nested) after finding the import-wizard endpoints don't process API calls;
+execution via `/api/triggers/1/notrigger/<uuid>`; polling via
+`/api/wf/api/workflows/log_list/`. Added `--regen-uuids` (instance references
+preserved), soft-delete name-conflict handling, forced `isActive` on test
+imports. Step 0 gains Method 2: FortiSOAR MCP servers (`/mcp/*`), with bundled
+helper playbook `templates/get-uuid-config.json`. Empirical API-key permission
+table.
 
 **v2.0** — Instance discovery (`fsr_discover.py`): connector steps bind to real
 installed versions and configuration UUIDs. Clarification gate in Step 1: no

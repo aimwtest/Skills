@@ -22,14 +22,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fsr_common import (CONFIG_DIR, PROFILE_FILE, ConfigError, FSRClient,
                         die, extract_items, load_config, try_candidates)
 
-# Verified against FortiSOAR 7.6.x where possible; adjust per your Swagger.
-CONNECTORS_CANDIDATES = [
-    "/api/3/connectors?$limit=1000",
-]
-CONFIGS_CANDIDATES = [
-    "/api/3/connector_configs?$limit=2000",
-    "/api/integration/connectors/configs/",
-]
+# Verified against a live FortiSOAR 7.6.1 instance:
+#   connectors : GET /api/integration/connectors/ (paginated via ?page=N)
+#   configs    : GET /api/integration/configuration/ (config_id = the UUID a
+#                playbook step's `config` needs; status = health; connector =
+#                numeric connector id, joined via the connectors list)
+#   picklists  : GET /api/3/picklists (hydra collection)
+CONNECTORS_PATH = "/api/integration/connectors/"
+CONFIGS_PATH = "/api/integration/configuration/"
 PICKLISTS_CANDIDATES = [
     "/api/3/picklists?$limit=2000",
 ]
@@ -37,27 +37,46 @@ PICKLISTS_CANDIDATES = [
 
 def norm_connector(item):
     return {
-        "name": item.get("name") or item.get("connector_name"),
+        "name": item.get("name"),
         "version": item.get("version"),
-        "label": item.get("label") or item.get("display_name"),
-        "installed": item.get("installed", True),
+        "label": item.get("label"),
+        "active": item.get("active"),
+        "system": item.get("system"),
+        "config_count": item.get("config_count"),
     }
 
 
-def norm_config(item):
-    connector = item.get("connector") or {}
-    if isinstance(connector, str):  # IRI form
-        connector = {"name": connector.rstrip("/").split("/")[-1]}
+def norm_config(connector_by_id, item):
     return {
-        "uuid": item.get("uuid"),
-        "name": item.get("name") or item.get("config_name"),
-        "connector": connector.get("name"),
-        "healthy": item.get("healthy", item.get("health_status")),
+        "uuid": item.get("config_id"),
+        "name": item.get("name"),
+        "connector": (connector_by_id.get(item.get("connector")) or {}).get("name"),
+        "default": item.get("default"),
+        "healthy": item.get("status") == 1,
     }
 
 
 def norm_picklist(item):
-    return {"uuid": item.get("uuid"), "name": item.get("name") or item.get("display")}
+    iri = item.get("@id", "")
+    return {
+        "uuid": iri.rstrip("/").split("/")[-1] if iri else item.get("uuid"),
+        "name": item.get("itemValue") or item.get("name"),
+        "list": item.get("listName", "").rstrip("/").split("/")[-1] or None,
+    }
+
+
+def fetch_all_connectors(client):
+    """Walk the paginated /api/integration/connectors/ endpoint."""
+    items, page = [], 1
+    while True:
+        status, data = client.get(f"{CONNECTORS_PATH}?page={page}")
+        if not (200 <= status < 300):
+            raise ConfigError(f"GET {CONNECTORS_PATH}?page={page} -> HTTP {status}: "
+                              f"{str(data)[:300]}")
+        items.extend(data.get("data", []))
+        if not data.get("nextPage"):
+            return items
+        page += 1
 
 
 def main():
@@ -89,22 +108,20 @@ def main():
     }
 
     try:
-        _, _, data = try_candidates(client, "GET", CONNECTORS_CANDIDATES)
+        raw = fetch_all_connectors(client)
         profile["connectors"] = sorted(
-            (norm_connector(c) for c in extract_items(data)),
-            key=lambda c: (c["name"] or ""),
-        )
+            (norm_connector(c) for c in raw), key=lambda c: (c["name"] or ""))
+        connector_by_id = {c.get("id"): c for c in raw if c.get("id") is not None}
+        status, data = client.get(CONFIGS_PATH)
+        if 200 <= status < 300:
+            profile["configs"] = sorted(
+                (norm_config(connector_by_id, c) for c in extract_items(data)),
+                key=lambda c: (c["connector"] or "", c["name"] or ""))
+        else:
+            profile["errors"].append(
+                f"configs: GET {CONFIGS_PATH} -> HTTP {status}: {str(data)[:300]}")
     except ConfigError as e:
         profile["errors"].append(f"connectors: {e}")
-
-    try:
-        _, _, data = try_candidates(client, "GET", CONFIGS_CANDIDATES)
-        profile["configs"] = sorted(
-            (norm_config(c) for c in extract_items(data)),
-            key=lambda c: (c["connector"] or "", c["name"] or ""),
-        )
-    except ConfigError as e:
-        profile["errors"].append(f"configs: {e}")
 
     try:
         _, _, data = try_candidates(client, "GET", PICKLISTS_CANDIDATES)

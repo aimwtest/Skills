@@ -236,7 +236,8 @@ def check_workflow(wf, idx, valid_types, catalog, profile):
             check_connector_step(tag, name, st_uuid, args, catalog, profile)
 
     if not end_found:
-        err(f"{tag}: no reachable End step (cyops_utilities / no_op) found")
+        warn(f"{tag}: no End step (cyops_utilities / no_op) — official guidance is to "
+             f"terminate every path in an End step, though FortiSOAR tolerates its absence")
 
     # --- parameters vs start step --------------------------------------------
     params = set(wf.get("parameters", []) or [])
@@ -299,7 +300,11 @@ def check_connector_step(tag, step_name, st_uuid, args, catalog, profile):
         elif connector in installed and args.get("version"):
             inst_ver = installed[connector].get("version")
             if inst_ver and args["version"] != inst_ver:
-                err(f"{label}: version '{args['version']}' != installed version '{inst_ver}'")
+                if connector in BUILTIN_CONNECTORS:
+                    warn(f"{label}: version '{args['version']}' != installed '{inst_ver}' "
+                         f"(platform connector — drift usually tolerated, verify operation exists)")
+                else:
+                    err(f"{label}: version '{args['version']}' != installed version '{inst_ver}'")
         cfg_uuid = args.get("config")
         if cfg_uuid and UUID_RE.match(str(cfg_uuid)):
             match = [c for c in configs if c.get("uuid") == cfg_uuid]

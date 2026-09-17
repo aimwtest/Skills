@@ -1,6 +1,8 @@
 # fortisoar-playbook
 
-**v2.0** — now with live instance discovery, automated validation, and an import-test loop.
+**v2.1** — all API endpoints verified against a live 7.6.1 instance; FortiSOAR MCP
+servers added as a second discovery method. **v2.0** introduced live instance
+discovery, automated validation, and an import-test loop.
 
 A reusable AI-agent skill that designs, generates, **and self-tests** FortiSOAR
 playbook (workflow) JSON — import-ready for FortiSOAR 7.6.x.

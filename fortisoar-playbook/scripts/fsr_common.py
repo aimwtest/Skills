@@ -67,7 +67,10 @@ class FSRClient:
             self.ctx.check_hostname = False
             self.ctx.verify_mode = ssl.CERT_NONE
         self.headers = {
-            "API-KEY": api_key,
+            # FortiSOAR API-key auth per 7.6.x API Guide, Access Keys chapter:
+            #   Authorization: API-KEY <key>
+            # (Bearer <token> is for session tokens from /auth/authenticate)
+            "Authorization": f"API-KEY {api_key}",
             "Accept": "application/json",
         }
 
@@ -128,11 +131,11 @@ def try_candidates(client, method, paths, body=None, raw_body=None, extra_header
 
 
 def extract_items(data):
-    """Accept hydra @graph, {'data': [...]}, or a plain list; return list of dicts."""
+    """Accept hydra @graph / hydra:member, {'data': [...]}, or a plain list."""
     if isinstance(data, list):
         return data
     if isinstance(data, dict):
-        for key in ("@graph", "data", "items", "results"):
+        for key in ("@graph", "hydra:member", "data", "items", "results"):
             if isinstance(data.get(key), list):
                 return data[key]
     return []
