@@ -3,13 +3,24 @@ name: fortisoar-playbook
 description: Design, generate, and self-test FortiSOAR playbooks (workflow JSON). Use when the user mentions FortiSOAR, playbook, SOAR workflow, playbook collection, connector operations, playbook JSON import/export, or wants to automate a security process in FortiSOAR. Covers trigger setup, step types, routing, Jinja templating, instance connector discovery, static validation, live import-testing, and producing import-ready JSON.
 ---
 
-# FortiSOAR Playbook Builder — v2.3
+# FortiSOAR Playbook Builder — v2.4
 
 This skill helps design and generate FortiSOAR playbook JSON that can be imported
 into FortiSOAR 7.6.x — and **verifies it against a live instance** before handing
 it over. It is self-contained: all reference material is bundled in `reference/`,
 `templates/`, and `scripts/` relative to this file.
 
+**v2.7:** new "Iterating on an existing playbook" guidance + a duplicate guard in
+`fsr_import_test.py` (`--allow-duplicates`) so a fix updates the existing playbook
+instead of silently importing a new suffixed copy.
+**v2.6:** after a live import test, the agent must ask the user whether to keep
+the imported playbook/collection or clean it up — never auto-cleanup and never
+silently leave artifacts.
+**v2.5:** generated playbooks default to `"debug": true` (verbose per-step logging);
+new configurations are created with `"default": true`; step names must be
+alphanumeric/space/underscore only (no `?`).
+**v2.4:** new configurations are created with `"default": true`; step names must
+be alphanumeric/space/underscore only (no `?`); `debug` defaults to `false`.
 **v2.3:** connector install API verified end-to-end on a live dev instance
 (metadata source, install endpoint, async polling, permission probe). **v2.2:**
 missing-connector handling (install-then-discover with user approval);
@@ -139,9 +150,14 @@ Verified API flow (verified end-to-end against a live 7.6.x dev instance):
    `In-Progress` → `Completed` (observed ~35 s for a small connector).
 3. **Configure**: re-run discovery — the connector now appears with
    `config_count: 0`. Ask the user for the connector's configuration
-   credentials (API keys, tokens — you cannot invent these), create the
-   configuration (Settings > Connector Configurations), then re-run discovery
-   once more to harvest the real `config` UUID.
+   credentials (API keys, tokens — you cannot invent these). Create the
+   configuration via `POST /api/integration/configuration/` with
+   `{"name": "...", "connector": <numeric connector id>, "config": { ... }, "default": true}`
+   — **always set `"default": true`** so the new config is the connector's
+   unambiguous default (a non-default config can silently not-bind in the
+   playbook). The response returns `config_id` (the UUID the step's `config`
+   binds to). Then re-run discovery once more to harvest the real `config` UUID
+   (or read `config_id` straight from the response).
 4. Continue to Step 1. If the user declines the install, fall back to
    proposing an installed alternative or a built-in connector workaround.
 
@@ -234,10 +250,15 @@ unless the user asks for a bare single playbook.
 3. **Coordinates**: `top` and `left` are **strings**, not numbers (e.g. `"40"`,
    not `40`). Same for group `height`/`width`. Convention: Start at `top:"40",
    left:"40"`; flow rightward (`left += 400`) and downward (`top += 200`).
-4. **Cross-references**: steps reference each other via IRI built from the target's
-   `uuid`: `/api/3/workflow_steps/<uuid>`. Routes' `sourceStep`/`targetStep`, the
+4. **Cross-references & step names**: steps reference each other via IRI built from
+   the target's `uuid`: `/api/3/workflow_steps/<uuid>`. Routes' `sourceStep`/`targetStep`, the
    workflow's `triggerStep`, the Condition step's `step_iri`, the Call-Playbook's
-   `workflowReference`, etc.
+   `workflowReference`, etc. **Step names may contain only alphanumeric characters,
+   spaces, and underscores** — never `?`, `!`, `-`, `.`, or other punctuation. A
+   `?` in a Condition step name (e.g. "Compromised?") is rejected by FortiSOAR;
+   name it "Compromised" (or "Is Compromised") instead. Jinja references the step
+   by name with spaces mapped to underscores (`vars.steps.<StepName>`), so keep
+   names short, unique, and free of punctuation.
 5. **Jinja templating**: use `{{vars.<name>}}` for variables,
    `{{vars.input.records[0].<field>}}` for trigger record fields,
    `{{vars.input.params['<name>']}}` for declared parameters,
@@ -291,7 +312,9 @@ unless the user asks for a bare single playbook.
     `steps`, `routes`, `groups`, `priority`, `isEditable`, `uuid`, `owners:[]`,
     `isPrivate`, `deletedAt:null`, `recordTags:[]`, `aliasName:null`,
     `tag:null`, `description`.
-    Use `"priority": "/api/3/picklists/2b563c61-ae2c--41c0-a85a-c9709585e3f2"` (Medium).
+    Use `"priority": "/api/3/picklists/2b563c61-ae2c-41c0-a85a-c9709585e3f2"` (Medium).
+    Set `"debug": true` by default — debug mode logs verbose per-step input/output
+    so the user can see exactly what each step did during design and testing.
 12. **Collection wrapper (Shape A)**: wrap the Workflow in
     `{ "type":"workflow_collections", "data":[ { ...collection..., "workflows":[ <workflow> ] } ], "exported_tags":[] }`.
     Give the collection a `uuid`, `name`, `description`, `visible:true`,
@@ -340,7 +363,7 @@ Prove the playbook in the dev instance using the approved test plan:
 
 ```bash
 python3 scripts/fsr_import_test.py <playbook.json> --run \
-    --test-plan .fortisoar/test-plan-<name>.json --regen-uuids --cleanup
+    --test-plan .fortisoar/test-plan-<name>.json --regen-uuids
 ```
 
 Verified mechanics (7.6.1): import is direct CRUD (`POST /api/3/workflow_collections`
@@ -352,23 +375,53 @@ Verified mechanics (7.6.1): import is direct CRUD (`POST /api/3/workflow_collect
 1. **Import** — the script imports and verifies visibility in the workflow list.
    On failure, map the error to a cause (see Step 5's known traps), fix the JSON,
    re-validate (Step 4), re-import. **Max 3 fix rounds**, then stop and show the
-   user the raw error and your diagnosis. Re-runs need `--regen-uuids` (FortiSOAR
-   rejects duplicate UUIDs with 409; soft-deleted name conflicts are auto-suffixed).
-   The script forces `isActive=true` on test imports so they can be triggered.
+   user the raw error and your diagnosis. If a fix means re-importing a playbook
+   that's already on the instance, do **not** just `--regen-uuids` — that mints a
+   duplicate copy; follow "Iterating on an existing playbook" (below) to update in
+   place instead. The script forces `isActive=true` on test imports so they can be
+   triggered.
 2. **Execute** — with `--run`, the script creates the test data, triggers the
    playbook, polls execution, and prints **per-criterion PASS/FAIL**. A failed
    criterion means the playbook (or the test data) is wrong — diagnose, fix,
    re-run. Do not declare success on "it imported" alone.
 3. **Guardrails** — target only the instance from Step 0 marked `"environment":
    "dev"`. If the user explicitly asks to test against production, get explicit
-   in-chat confirmation, then pass `--allow-production`. Use `--cleanup` so test
-   records and collections don't accumulate. **Permission note:** if the API key
-   lacks Playbooks update/delete, the workflow itself can't be auto-cleaned
-   (script warns) — delete test workflows in the UI, and purge the recycle bin
-   (soft-deleted collections/workflows still block re-creation by name/uuid).
+   in-chat confirmation, then pass `--allow-production`. **Do not auto-cleanup** —
+   after the test completes, ask the user whether to keep or clean up (item 5).
+   **Permission note:** if the API key lacks Playbooks update/delete, the
+   workflow itself can't be auto-cleaned (script warns) — delete test workflows
+   in the UI, and purge the recycle bin (soft-deleted collections/workflows still
+   block re-creation by name/uuid).
 4. **No API access?** Skip this step, say so plainly, and hand over with the
    manual import instructions (Step 5) plus the test plan for the user to run
    through in the UI.
+5. **Keep vs cleanup (always ask)** — once the test passes (or fails with a
+   diagnosis), never silently leave artifacts or silently delete them. Ask the
+   user which they want:
+
+   - **Keep** — leave the imported collection + workflow (and test records) in
+     place. Common when the user wants to review the playbook in the designer or
+     is iterating. Tell them the exact collection name, and warn that FortiSOAR
+     appends a random `(xxxxxx)` suffix when a soft-deleted record shares the
+     name — purge the recycle bin to get a clean name.
+   - **Clean up** — pass `--cleanup` (re-import with `--regen-uuids --cleanup`,
+     or delete via the API/UI) to remove test records and the test collection.
+     Where the key can't delete, give the user the exact items to remove in the
+     UI and remind them to purge the recycle bin.
+
+   If the user doesn't say, default to **ask** — never assume keep and never
+   assume cleanup.
+6. **On success, remind the user (every time the playbook is kept and working):**
+   - Earlier iterations of this playbook are still in the **Recycle Bin**
+     (soft-deleted) — they must be purged manually in the GUI (System > Recycle
+     Bin). There is no API purge; the API only soft-deletes.
+   - Re-importing after a fix re-uses the *same* playbook but may leave the
+     collection with a random `(xxxxxx)` suffix unless the recycle bin was purged.
+     The active list always holds only the latest, so this is cosmetic — but say
+     so explicitly so the user isn't surprised by the changed name.
+   - For a **stable name + stable UUID across updates**, use the GUI Import →
+     "Replace existing playbook collection" (matches by UUID) rather than
+     delete-then-re-import.
 
 ### Step 5 — Explain import
 
@@ -388,6 +441,43 @@ Tell the user:
    bin. Check all stepType UUIDs against `step-types-quickref.md`, replace any
    placeholder IRIs with real UUIDs or Jinja picklist filters, and purge the
    recycle bin.
+
+## Iterating on an existing playbook (update vs import-as-new)
+
+The #1 trap when fixing a playbook is re-importing it as a brand-new copy.
+FortiSOAR's direct-CRUD API cannot update a playbook in place: a deleted
+collection/workflow is soft-deleted and keeps reserving **both its name and its
+UUID**, so re-importing — especially with `--regen-uuids` — spawns a fresh
+duplicate and the collection name gains a random `(xxxxxx)` suffix. The script
+now refuses to do this silently (see below); the agent must pick the update path
+deliberately.
+
+**First import (or a genuinely separate copy):** normal import — no same-named
+workflow exists, so the guard passes.
+
+**Iterate / fix an already-imported playbook — update in place, don't copy:**
+1. Keep the JSON's UUIDs stable — do **not** `--regen-uuids` when the goal is to
+   update the same playbook. The UUIDs are the playbook's identity; regenerating
+   them is exactly what turns "update" into "import a copy".
+2. Update via one of:
+   - **UI import wizard** — Automation > Playbooks > Import > select the file and
+     check **"Replace existing playbook collection"** (matches by UUID). This is
+     FortiSOAR's intended iteration path.
+   - **Purge + re-import** — delete the stale copy, purge the recycle bin (System >
+     Recycle Bin) to free the name+UUID, then re-import the JSON unchanged.
+3. If the script stops with "a workflow with the same name already exists", that's
+   the duplicate guard working. Do **not** reflexively add `--allow-duplicates` —
+   that creates yet another copy. Use an update path above instead.
+
+`--allow-duplicates` is only for when you truly want a second, independent copy of
+the playbook (e.g. a variant under active development alongside the original).
+
+**Why there is no clean API-only update:** single-workflow GET/PUT/DELETE return
+`403` for the Playbook Administrator key, and even a successful collection DELETE
+soft-deletes rather than freeing the name/UUID — there is no API purge for the
+recycle bin. So update-in-place necessarily touches the UI once. Track which
+collection/workflow UUIDs you deployed (the import log prints them) so a fix can
+re-target the same playbook.
 
 ## Credential handling (rules)
 
@@ -417,7 +507,7 @@ Per-area detail:
 | Connectors | Install | optional, Step 0 install-then-discover: `POST /api/integration/install-connector/` + `POST /api/3/fetch_repo_content` (repo metadata). Verified end-to-end (real install completed) with **Playbook Administrator as the only role** — no admin role required, and that role also covers the discovery Read needs. Permission probe: POST an empty payload; a `400` validation reply means authorized, a `403` means escalate the role's Connectors access |
 | Picklists | Read | discovery + test data picklist IRIs |
 | Playbooks / Workflows | Full CRUD + Execute | import (create), trigger, **cleanup** — verified: **Playbook Administrator alone** can list collections/workflows, import (collection + workflow create), trigger execution and poll `log_list`, and delete collections (which cascades to their workflows); but single-workflow GET/PUT/DELETE return `403`, leaving test workflows for manual UI cleanup (+ recycle-bin purge) |
-| Connector configurations | Create | Step 0 install-then-discover: `POST /api/integration/configuration/` — verified with Playbook Administrator alone (returns the `config_id` to bind in playbook steps); configuration DELETE returns `403` → manual UI cleanup |
+| Connector configurations | Create | Step 0 install-then-discover: `POST /api/integration/configuration/` — verified with Playbook Administrator alone (returns the `config_id` to bind in playbook steps); mark new configs `"default": true`; configuration DELETE returns `403` → manual UI cleanup |
 | Test module(s) (Alerts, …) | Create, Read, Update (Delete = `403`) | synthetic test records — verified: Playbook Administrator alone gets `403` on create; **adding SOC Analyst** enables alert Create/Read/Update but **not Delete** (test records need manual cleanup or a higher role). Without any module access, use `existing_record` in the test plan instead of generated records |
 | Schedules | Read, Update | only for testing schedule-triggered playbooks |
 
@@ -463,6 +553,27 @@ trigger patterns, real argument shapes, Jinja patterns, routing, groups, macros,
 and field surveys. Consult it when you need a real-world example of a pattern.
 
 ## Changelog
+
+**v2.7** — Addressed "import as new on every fix": a fix must update the existing
+playbook, not spawn a copy. Added a "Iterating on an existing playbook" section
+(update via UI "Replace existing playbook collection" or purge recycle bin +
+re-import; keep UUIDs stable). `fsr_import_test.py` gains a duplicate guard that
+refuses to import when a same-named workflow already exists, with
+`--allow-duplicates` as the explicit opt-out; its collection-409 message now
+points at recycle-bin purge.
+
+**v2.6** — After a live import test, the agent must explicitly ask the user
+whether to keep the imported collection/workflow or clean it up. Removed the
+auto-`--cleanup` default; `--cleanup` is now opt-in after the user's choice.
+Notes that FortiSOAR suffixes a soft-deleted name collision with a random
+`(xxxxxx)`, and that purging the recycle bin restores the clean name.
+
+**v2.4** — Three generation corrections from live-run feedback: (1) connector
+configurations created during install-then-discover are marked `"default": true`
+(non-default configs can silently not-bind); (2) step names allow only
+alphanumerics, spaces, and underscores — `?` and other punctuation are rejected
+(renamed the "Compromised?"-style Condition names); (3) `debug` is documented to
+default to `true`.
 
 **v2.3** — Connector install verified end-to-end on a live 7.6.x dev instance:
 metadata via `POST /api/3/fetch_repo_content` (`connectors/info/<name>_<ver>/info.json`

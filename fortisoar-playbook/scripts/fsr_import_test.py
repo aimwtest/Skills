@@ -13,14 +13,20 @@ Flow verified against a live FortiSOAR 7.6.1 instance:
 
 Usage:
   python3 fsr_import_test.py <playbook.json> [--run --test-plan plan.json]
-                             [--regen-uuids] [--cleanup] [--allow-production] [--insecure]
+                             [--regen-uuids] [--cleanup] [--allow-production]
+                             [--allow-duplicates] [--insecure]
 
 SAFETY: refuses to run against an instance whose config says environment="prod"
 unless --allow-production is passed. The skill instructs the agent to also get
 explicit in-chat confirmation before targeting production.
 
-Re-imports: FortiSOAR rejects duplicate UUIDs (409). On re-runs either delete the
-previous import first, or pass --regen-uuids to mint fresh UUIDs for every object.
+Duplicate guard: FortiSOAR's direct-CRUD API cannot update a playbook in place —
+a soft-deleted collection/workflow keeps reserving both its name and UUID, so a
+re-import mints a brand-new copy (and the collection name gets a random
+"(xxxxxx)" suffix). This script therefore refuses to import when a workflow with
+the same name already exists, unless --allow-duplicates is passed. To update an
+existing playbook, use the UI import wizard's "Replace existing playbook
+collection" (matches by UUID) or purge the recycle bin and re-import.
 
 Test plan JSON shape:
 {
@@ -128,6 +134,8 @@ def import_playbook(client, doc):
                     name = f"{coll.get('name')} ({uuidlib.uuid4().hex[:6]})"
                     print(f"  collection name conflicts with a soft-deleted record — "
                           f"retrying as '{name}'")
+                    print(f"  (purge the recycle bin — System > Recycle Bin — to "
+                          f"restore the clean name '{coll.get('name')}')")
                     continue
                 if not (200 <= status < 300):
                     die(f"collection create failed: HTTP {status}: {str(data)[:300]}", code=1)
@@ -158,6 +166,30 @@ def find_workflow(client, wf_uuid, wf_name):
         if wf_uuid is None or w.get("uuid") == wf_uuid:
             return w
     return None
+
+
+def doc_workflow_names(doc):
+    """Names of every workflow the playbook file would import."""
+    names = []
+    if doc.get("type") == "workflow_collections":
+        for coll in doc.get("data", []):
+            for wf in coll.get("workflows", []):
+                if isinstance(wf, dict) and wf.get("name"):
+                    names.append(wf["name"])
+    elif doc.get("@type") == "Workflow":
+        if doc.get("name"):
+            names.append(doc["name"])
+    return names
+
+
+def existing_workflows_by_name(client, names):
+    """Map name -> list of already-imported (non-soft-deleted) workflows."""
+    found = {}
+    for name in names:
+        q = urllib.parse.quote(name)
+        status, data = client.get(f"/api/3/workflows?$limit=100&name={q}")
+        found[name] = [w for w in extract_items(data) if w.get("name") == name]
+    return found
 
 
 def create_test_record(client, module, record_data):
@@ -237,6 +269,9 @@ def main():
     ap.add_argument("--cleanup", action="store_true",
                     help="delete test record + imported workflow/collection afterwards")
     ap.add_argument("--allow-production", action="store_true")
+    ap.add_argument("--allow-duplicates", action="store_true",
+                    help="import even if a workflow with the same name already exists "
+                         "(creates a NEW copy rather than updating)")
     ap.add_argument("--insecure", action="store_true")
     ap.add_argument("--host")
     ap.add_argument("--api-key")
@@ -265,6 +300,33 @@ def main():
             plan = json.load(f)
 
     client = FSRClient(host, key, insecure=args.insecure)
+
+    # --- 0. duplicate guard -----------------------------------------------------
+    names = doc_workflow_names(doc)
+    if names:
+        dups = {n: ws for n, ws in existing_workflows_by_name(client, names).items() if ws}
+        if dups and not args.allow_duplicates:
+            print("ERROR: a workflow with the same name already exists on the instance:",
+                  file=sys.stderr)
+            for n, ws in dups.items():
+                for w in ws:
+                    print(f"  - '{n}' ({w.get('uuid')}) active={w.get('isActive')}",
+                          file=sys.stderr)
+            print(file=sys.stderr)
+            print("Re-importing now would create a DUPLICATE copy, and the collection",
+                  file=sys.stderr)
+            print("may get a random '(xxxxxx)' suffix because a soft-deleted record",
+                  file=sys.stderr)
+            print("still reserves the name. To UPDATE the existing playbook instead:",
+                  file=sys.stderr)
+            print("  * UI: Automation > Playbooks > Import > check 'Replace existing",
+                  file=sys.stderr)
+            print("    playbook collection' (matches by UUID).", file=sys.stderr)
+            print("  * or purge the recycle bin (System > Recycle Bin) then re-import.",
+                  file=sys.stderr)
+            print("To proceed anyway and create a NEW copy, re-run with --allow-duplicates.",
+                  file=sys.stderr)
+            sys.exit(1)
 
     # --- 1. import -------------------------------------------------------------
     print(f"Importing {args.playbook} -> {host} ...")
