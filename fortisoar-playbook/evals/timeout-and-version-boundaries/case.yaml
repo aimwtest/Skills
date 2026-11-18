@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: timeout-and-version-boundaries
+expected_outcome: |
+  Corrects timeout-only retry semantics, supports configurable parallel concurrency without guessing export keys, requires real manifests and exports for importable JSON, and separates documented version features from live-tested compatibility.

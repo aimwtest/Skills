@@ -3,12 +3,17 @@ name: fortisoar-playbook
 description: Design, generate, and self-test FortiSOAR playbooks (workflow JSON). Use when the user mentions FortiSOAR, playbook, SOAR workflow, playbook collection, connector operations, playbook JSON import/export, or wants to automate a security process in FortiSOAR. Covers trigger setup, step types, routing, Jinja templating, instance connector discovery, static validation, live import-testing, and producing import-ready JSON.
 ---
 
-# FortiSOAR Playbook Builder — v2.4
+# FortiSOAR Playbook Builder — v2.8
 
-This skill helps design and generate FortiSOAR playbook JSON that can be imported
-into FortiSOAR 7.6.x — and **verifies it against a live instance** before handing
-it over. It is self-contained: all reference material is bundled in `reference/`,
-`templates/`, and `scripts/` relative to this file.
+This skill helps design and generate FortiSOAR playbooks. Its bundled JSON/API
+guidance was developed for 7.6.x and tested against a 7.6.1 instance. It also
+includes **documentation-backed 8.0.1 AI guidance**, not a claim of live-tested
+8.0.1 import/runtime compatibility. Perform authorized live verification when
+access is available; otherwise state that it was not performed. Reference
+material is bundled in `reference/`, `templates/`, and `scripts/`.
+
+**v2.8:** read `reference/fortisoar-8.0.1-ai.md` for Generic LLM, custom tool-calling
+loops, native agent entry points, timeout-only retries, concurrency, and AI demos.
 
 **v2.7:** new "Iterating on an existing playbook" guidance + a duplicate guard in
 `fsr_import_test.py` (`--allow-duplicates`) so a fix updates the existing playbook
@@ -40,13 +45,46 @@ before generation, automated static validation, guarded live import-test loop.
 Do NOT use for: generic Python/Ansible scripting unrelated to FortiSOAR, or for
 configuring FortiSOAR appliance infrastructure (that is ops, not playbook design).
 
+## Version evidence and AI workflow selection
+
+For 8.0.1, Generic LLM, AI agent calls, or agentic demos, read
+`reference/fortisoar-8.0.1-ai.md` **before proposing an implementation**. Distinguish
+officially documented capabilities, the instance's installed content, and behavior
+actually tested here. A passing legacy validator or 7.6.1 script run does not
+prove 8.0.1 compatibility. Permission failures below are observations from the
+tested 7.6.1 account, not universal API restrictions across roles or versions.
+
+Choose and label the requested pattern:
+- **LLM-assisted playbook:** Generic LLM `chat_completions` or `create_responses`
+  produces an assessment; the fixed playbook decides what executes.
+- **Custom agent in a playbook:** the model selects allowlisted tools; the
+  playbook validates arguments, dispatches approved operations, returns correlated
+  tool results, and enforces a bounded loop. Tools definitions alone do not
+  establish automatic tool execution. This is not the native Orchestrator.
+- **Native FortiSOAR agentic workflow:** the documented Orchestrator entry point
+  is AI Assistant; SOC Response Action Agent runs only when called by Orchestrator.
+  Do not invent a direct agent step/API. Verify any other agent's supported
+  interface against its installed documentation/export before using it.
+
+For a design-only discussion, explain known capabilities and remaining evidence
+without requesting credentials or contacting an instance. Before generating JSON,
+apply Steps 0–4: require real connector manifests, installed versions/config IDs,
+and a target-version export for new settings. Display labels are not parameter
+keys. The new reference does not add Generic LLM to the static manifest catalog.
+
+Use local structured-output validation, read-only tools by default, and an
+enforced approval workflow before containment. Prompt wording is not an approval
+barrier. Generic LLM does not automatically inherit native FortiAI masking,
+entitlement, or AI Agent Traceability guarantees.
+
 ## Reference material (read these before generating)
 
-This skill bundles five reference docs. **Always read the relevant ones before
+This skill bundles six reference docs. **Always read the relevant ones before
 producing JSON** — FortiSOAR hard-fails on invalid structure.
 
 | File | Use for |
 |---|---|
+| `reference/fortisoar-8.0.1-ai.md` | Read first for 8.0.1/Generic LLM/agentic designs: documented operations, version evidence, supported native entry points, bounded tool dispatch, retries/concurrency, governance, and three conceptual demos. Not an import schema. |
 | `reference/playbook-json-schema.md` | The JSON export structure: shapes, every Workflow field, all 22 step types with argument skeletons + examples, routes, groups, picklists, positioning, validation rules. This is the authoritative schema. |
 | `reference/connector-operations.md` | Catalog of all 3rd-party connector operations harvested from the official `fortinet-fortisoar` GitHub org (379 connectors, 3339 operations). For each connector: slug, version, operation → title, and parameters (name, title, required). **Read this before writing any connector-call step** to pick the exact `operation`/`operationTitle` and `params` keys. Full parameter detail (descriptions, data types, choices, defaults) is in `reference/connector-manifests.json`. |
 | `reference/jinja-cookbook.md` | 50+ real production Jinja patterns (trigger input, params, REST request, step output, for_each item, picklist/fromIRI filters, arrow dates, list mutation, conditionals) harvested from 1367 official playbooks. Use as copy-paste templates. |
@@ -445,7 +483,8 @@ Tell the user:
 ## Iterating on an existing playbook (update vs import-as-new)
 
 The #1 trap when fixing a playbook is re-importing it as a brand-new copy.
-FortiSOAR's direct-CRUD API cannot update a playbook in place: a deleted
+The bundled direct-CRUD scripts have no verified in-place update path with the
+tested 7.6.1 account: a deleted
 collection/workflow is soft-deleted and keeps reserving **both its name and its
 UUID**, so re-importing — especially with `--regen-uuids` — spawns a fresh
 duplicate and the collection name gains a random `(xxxxxx)` suffix. The script
@@ -472,10 +511,12 @@ workflow exists, so the guard passes.
 `--allow-duplicates` is only for when you truly want a second, independent copy of
 the playbook (e.g. a variant under active development alongside the original).
 
-**Why there is no clean API-only update:** single-workflow GET/PUT/DELETE return
-`403` for the Playbook Administrator key, and even a successful collection DELETE
+**Why no API-only update was verified in the tested setup:** single-workflow
+GET/PUT/DELETE returned `403` for the tested Playbook Administrator key, and even
+a successful collection DELETE
 soft-deletes rather than freeing the name/UUID — there is no API purge for the
-recycle bin. So update-in-place necessarily touches the UI once. Track which
+recycle bin in these scripts. Use the UI update path for this tested setup; do
+not infer that all roles or 8.0.1 have the same restriction. Track which
 collection/workflow UUIDs you deployed (the import log prints them) so a fix can
 re-target the same playbook.
 
@@ -553,6 +594,14 @@ trigger patterns, real argument shapes, Jinja patterns, routing, groups, macros,
 and field surveys. Consult it when you need a real-world example of a pattern.
 
 ## Changelog
+
+**v2.8** — Added source-backed 8.0.1 AI reference and three regression cases.
+Distinguishes LLM-assisted calls, custom validated tool loops, and native agentic
+entry points. Documents Generic LLM operations, timeout-only retries, bounded
+parallel loops, organizational context, trace/privacy boundaries, and conceptual
+brute-force demos. Requires manifests/target-version exports rather than guessed
+JSON fields. Keeps 7.6.1 observations separate from documented 8.0.1 capabilities;
+runtime scripts and connector catalog are unchanged.
 
 **v2.7** — Addressed "import as new on every fix": a fix must update the existing
 playbook, not spawn a copy. Added a "Iterating on an existing playbook" section

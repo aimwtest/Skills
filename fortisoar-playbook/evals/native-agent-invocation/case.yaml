@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: native-agent-invocation
+expected_outcome: |
+  Explains the documented AI Assistant-only Orchestrator and Orchestrator-only SOC Response Action Agent invocation restrictions, avoids invented interfaces, and proposes an enforced approval-gated lab workflow.

@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: llm-versus-agent
+expected_outcome: |
+  Distinguishes LLM-assisted triage from agent execution, names documented Generic LLM operations, describes validated tool dispatch and result continuation with a bounded loop, and does not assume FortiAI protections apply to Generic LLM.

@@ -1,0 +1,14 @@
+interface:
+  display_name: FortiSIEM Parser Builder
+  short_description: 從 Sample Log 產生 FortiSIEM XML，核對現有欄位並只列出需新增的 Attributes
+  default_prompt: 使用 $fortisiem-parser-builder，依以下 Sample Logs 產生 FortiSIEM Parser
+    XML，優先重用現有 Attributes，只列出需要額外建立的欄位。
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true
